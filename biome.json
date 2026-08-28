@@ -1,0 +1,64 @@
+{
+	"$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+	"files": {
+		"ignore": [
+			"apps/desktop/**",
+			"apps/vscode/**",
+			"apps/registry/**",
+			"apps/uni-mobile/**",
+			"packages/create-plugin/**",
+			"apps/desktop/dist",
+			"apps/desktop/dist-daemon",
+			"apps/desktop/dist-registry",
+			"apps/vscode/dist",
+			"apps/vscode/dist-daemon",
+			"apps/vscode/dist-webview",
+			"apps/vscode/webview-ui/dist",
+			"apps/cli/dist",
+			"apps/daemon/dist",
+			"apps/gateway/dist",
+			"apps/registry/dist",
+			"npm/*/dist",
+			"apps/desktop/release",
+			"apps/desktop/build",
+			"apps/desktop/app",
+			"apps/portal/.next",
+			"apps/uni-mobile/**",
+			"**/*.module.css",
+			"apps/desktop/src/renderer/styles/plugin-canvas.css",
+			"figma-output",
+			"benchmarks/results",
+			".cache",
+			".xuancode",
+			".claude",
+			".next",
+			"out"
+		]
+	},
+	"linter": {
+		"rules": {
+			"recommended": true,
+			"suspicious": {
+				"noExplicitAny": "off",
+				"noArrayIndexKey": "off"
+			},
+			"style": {
+				"noNonNullAssertion": "off"
+			},
+			"a11y": {
+				"useButtonType": "off",
+				"useKeyWithClickEvents": "off",
+				"noLabelWithoutControl": "off",
+				"noSvgWithoutTitle": "off",
+				"useSemanticElements": "off",
+				"useValidAnchor": "off"
+			},
+			"correctness": {
+				"useExhaustiveDependencies": "off"
+			},
+			"complexity": {
+				"noForEach": "off"
+			}
+		}
+	}
+}

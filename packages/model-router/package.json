@@ -1,0 +1,15 @@
+{
+	"name": "@xuancode/model-router",
+	"version": "1.5.103",
+	"private": true,
+	"type": "module",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"scripts": {
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@xuancode/types": "workspace:*",
+		"@xuancode/model-adapter": "workspace:*"
+	}
+}

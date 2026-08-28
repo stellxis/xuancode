@@ -1,0 +1,17 @@
+{
+	"name": "@xuancode/subagent",
+	"version": "1.5.103",
+	"private": true,
+	"type": "module",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"scripts": {
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@xuancode/types": "workspace:*",
+		"@xuancode/orchestrator": "workspace:*",
+		"@xuancode/model-adapter": "workspace:*"
+	},
+	"license": "Apache-2.0 OR Commercial"
+}

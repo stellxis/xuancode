@@ -1,0 +1,25 @@
+{
+	"name": "xuancode",
+	"version": "1.5.103",
+	"private": true,
+	"type": "module",
+	"description": "玄码 Code Desk — 国风科技版智能编码中枢 (核心引擎)",
+	"workspaces": ["apps/*", "packages/*"],
+	"scripts": {
+		"build": "tsc --noEmit",
+		"lint": "biome check .",
+		"format": "biome format --write .",
+		"test": "vitest run",
+		"test:watch": "vitest"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^1.9.0",
+		"@types/node": "^22.0.0",
+		"tsup": "^8.5.1",
+		"typescript": "^5.8.0",
+		"vitest": "^3.0.0"
+	},
+	"engines": {
+		"node": ">=20.0.0"
+	}
+}

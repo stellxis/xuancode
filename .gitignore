@@ -1,0 +1,35 @@
+node_modules/
+dist/
+build/
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.local
+*.log
+data/
+.DS_Store
+*.tsbuildinfo
+
+docs/
+
+.claude/
+.xuancode/
+
+# 阶段 3 — 落位公开仓工作树但不上传（Electron 桌面端 / VSCode 扩展 / 插件注册服务 / 移动端 / create-plugin）
+apps/desktop/
+apps/vscode/
+apps/registry/
+apps/uni-mobile/
+packages/create-plugin/
+
+# AI agent compilation check temp files
+tsc_errors.txt
+tsc_out.txt
+tsc_result.txt
+tsc_output.txt
+
+# Test temp fixtures (created by fileTool/gitTool/toolManager tests)
+.test-filetmp/
+.test-gittmp/
+.test-tmp/

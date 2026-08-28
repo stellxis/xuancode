@@ -1,0 +1,17 @@
+{
+	"name": "@xuancode/plugins",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"scripts": {
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@xuancode/types": "workspace:*"
+	},
+	"devDependencies": {
+		"vitest": "^3.0.0"
+	}
+}

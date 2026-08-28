@@ -1,0 +1,12 @@
+packages:
+  - "apps/*"
+  - "!apps/desktop"
+  - "!apps/vscode"
+  - "!apps/registry"
+  - "!apps/uni-mobile"
+  - "packages/*"
+  - "!packages/create-plugin"
+
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true

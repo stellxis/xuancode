@@ -1,0 +1,1175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>玄码管理后台</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg-primary: #0d0d0d;
+  --bg-secondary: #111;
+  --bg-tertiary: #1a1a1a;
+  --border-color: #222;
+  --text-primary: #e0e0e0;
+  --text-secondary: #888;
+  --accent: #f0b429;
+  --accent-hover: #d9a020;
+  --danger: #e8505a;
+  --success: #48bb78;
+  --purple: #805ad5;
+}
+body { font-family: -apple-system, 'PingFang SC', sans-serif; background: var(--bg-primary); color: var(--text-primary); font-size: 14px; line-height: 1.5; }
+.app { display: flex; height: 100vh; overflow: hidden; }
+
+.sidebar { width: 200px; background: var(--bg-secondary); border-right: 1px solid var(--border-color); padding: 20px 0; flex-shrink: 0; display: flex; flex-direction: column; }
+.sidebar h1 { font-size: 16px; padding: 0 20px 20px; border-bottom: 1px solid var(--border-color); margin-bottom: 10px; color: var(--accent); }
+.sidebar-nav { flex: 1; }
+.sidebar a { display: block; padding: 10px 20px; color: var(--text-secondary); text-decoration: none; cursor: pointer; transition: all 0.2s; }
+.sidebar a:hover, .sidebar a.active { color: var(--accent); background: rgba(240,180,41,0.08); }
+.sidebar-footer { padding: 20px; border-top: 1px solid var(--border-color); }
+
+.main { flex: 1; padding: 24px; overflow-y: auto; display: flex; flex-direction: column; }
+.page { display: none; flex: 1; }
+.page.active { display: block; }
+
+h2 { font-size: 18px; margin-bottom: 16px; color: var(--accent); display: flex; align-items: center; justify-content: space-between; }
+.card { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+
+.toolbar { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+.toolbar-left { display: flex; gap: 8px; flex: 1; }
+.toolbar-right { display: flex; gap: 8px; }
+
+.search-input { padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; width: 240px; outline: none; transition: border-color 0.2s; }
+.search-input:focus { border-color: var(--accent); }
+.input, .select { padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; outline: none; }
+.input:focus, .select:focus { border-color: var(--accent); }
+.select { cursor: pointer; }
+
+.btn { padding: 8px 16px; border: 1px solid #444; border-radius: 6px; cursor: pointer; font-size: 13px; background: none; color: var(--text-secondary); transition: all 0.2s; }
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn-primary { background: var(--purple); color: #fff; border-color: var(--purple); }
+.btn-primary:hover { background: #6b46c1; border-color: #6b46c1; }
+.btn-danger { border-color: var(--danger); color: var(--danger); }
+.btn-danger:hover { background: var(--danger); color: #fff; }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color); }
+th { color: var(--text-secondary); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+tr:hover { background: rgba(255,255,255,0.02); }
+td a { color: var(--accent); text-decoration: none; }
+td a:hover { text-decoration: underline; }
+
+.pagination { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 16px; }
+.pagination button { padding: 6px 12px; min-width: 36px; }
+.pagination span { color: var(--text-secondary); font-size: 13px; }
+
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 20px; }
+.stat-card { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 20px; text-align: center; transition: transform 0.2s, border-color 0.2s; }
+.stat-card:hover { transform: translateY(-2px); border-color: var(--accent); }
+.stat-card .value { font-size: 28px; font-weight: 700; color: var(--accent); }
+.stat-card .label { font-size: 12px; color: var(--text-secondary); margin-top: 4px; text-transform: uppercase; }
+
+.plan-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.plan-card { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 20px; }
+.plan-card.plan-pro { border-color: var(--purple); }
+.plan-card.plan-enterprise { border-color: var(--accent); }
+.plan-card h3 { font-size: 16px; color: var(--accent); margin-bottom: 16px; }
+.plan-field { margin-bottom: 12px; }
+.plan-field label { display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; text-transform: uppercase; }
+.plan-field input { width: 100%; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); font-size: 13px; }
+
+.login-page { display: none; align-items: center; justify-content: center; height: 100vh; width: 100%; }
+.login-page.active { display: flex; }
+.login-box { width: 360px; padding: 40px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 12px; }
+.login-box h2 { justify-content: center; margin-bottom: 24px; }
+.login-box .input { width: 100%; padding: 12px; margin-bottom: 16px; }
+.login-box .btn { width: 100%; padding: 12px; }
+
+.toast-container { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+.toast { padding: 12px 20px; border-radius: 6px; font-size: 13px; animation: slideIn 0.3s ease; max-width: 320px; }
+.toast-success { background: rgba(72,187,120,0.15); border: 1px solid var(--success); color: var(--success); }
+.toast-error { background: rgba(232,80,90,0.15); border: 1px solid var(--danger); color: var(--danger); }
+.toast-info { background: rgba(128,90,213,0.15); border: 1px solid var(--purple); color: var(--purple); }
+@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; width: 480px; max-height: 80vh; overflow-y: auto; }
+.modal h3 { margin-bottom: 16px; color: var(--accent); }
+.modal .form-group { margin-bottom: 16px; }
+.modal .form-group label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+.modal .form-group .input, .modal .form-group .select { width: 100%; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+
+.loading { display: flex; align-items: center; justify-content: center; padding: 40px; color: var(--text-secondary); }
+.spinner { width: 24px; height: 24px; border: 2px solid var(--border-color); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 12px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.chart-container { height: 300px; margin-top: 16px; }
+.team-detail { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color); }
+
+.empty-state { text-align: center; padding: 40px; color: var(--text-secondary); }
+
+.tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; text-transform: uppercase; }
+.tag-admin { background: rgba(232,80,90,0.15); color: var(--danger); }
+.tag-lite { background: rgba(72,187,120,0.15); color: var(--success); }
+.tag-plus { background: rgba(66,153,225,0.15); color: #4299e1; }
+.tag-pro { background: rgba(128,90,213,0.15); color: var(--purple); }
+.tag-enterprise { background: rgba(240,180,41,0.15); color: var(--accent); }
+.tag-free { background: rgba(136,136,136,0.15); color: var(--text-secondary); }
+.tag-member { background: rgba(72,187,120,0.15); color: var(--success); }
+
+.copy-btn { cursor: pointer; color: var(--accent); font-size: 12px; margin-left: 6px; }
+.copy-btn:hover { text-decoration: underline; }
+
+.status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 500; }
+.status-badge.pending { background: rgba(240,180,41,0.15); color: var(--accent); }
+.status-badge.paid { background: rgba(72,187,120,0.15); color: var(--success); }
+.status-badge.expired, .status-badge.cancelled, .status-badge.failed { background: rgba(232,80,90,0.15); color: var(--danger); }
+.status-badge.refunded { background: rgba(128,90,213,0.15); color: var(--purple); }
+
+.plan-table-input { width: 100%; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); font-size: 12px; outline: none; min-width: 60px; box-sizing: border-box; }
+.plan-table-input:focus { border-color: var(--accent); }
+.plan-table-input.name-input { min-width: 100px; font-weight: 600; }
+.plan-table-input.features-input { min-width: 200px; }
+.plans-table-wrap { overflow-x: auto; }
+.plans-table-wrap table { min-width: 900px; }
+.plans-table-wrap th { white-space: nowrap; }
+
+.order-user-cell { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.order-id-cell { font-family: monospace; font-size: 11px; color: var(--text-secondary); }
+
+@media (max-width: 768px) {
+  .sidebar { position: fixed; left: -200px; transition: left 0.3s; z-index: 100; }
+  .sidebar.open { left: 0; }
+  .plan-grid { grid-template-columns: 1fr; }
+  .toolbar { flex-direction: column; }
+  .toolbar-left, .toolbar-right { width: 100%; }
+  .search-input { width: 100%; }
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <!-- 登录页 -->
+  <div id="page-login" class="login-page page">
+    <div class="login-box">
+      <h2>管理员登录</h2>
+      <input class="input" id="login-user" placeholder="用户名" />
+      <input class="input" id="login-pass" type="password" placeholder="密码" />
+      <div id="login-msg"></div>
+      <button class="btn btn-primary" onclick="doLogin()">登录</button>
+    </div>
+  </div>
+
+  <!-- 侧边栏 -->
+  <div class="sidebar" id="sidebar">
+    <h1>玄码管理</h1>
+    <nav class="sidebar-nav">
+      <a class="active" data-page="users">用户管理</a>
+      <a data-page="teams">团队管理</a>
+      <a data-page="usage">用量查询</a>
+      <a data-page="orders">支付订单</a>
+      <a data-page="stats">系统统计</a>
+      <a data-page="plans">订阅计划</a>
+      <a data-page="logs">操作日志</a>
+    </nav>
+    <div class="sidebar-footer">
+      <a onclick="logout()" style="color: var(--danger)">退出登录</a>
+    </div>
+  </div>
+
+  <!-- 主内容区 -->
+  <div class="main" id="main-content" style="display: none;">
+    <!-- 用户管理 -->
+    <div id="page-users" class="page">
+      <h2>用户管理 <button class="btn btn-primary" onclick="showCreateUserModal()">+ 创建用户</button></h2>
+      <div class="card">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <input class="search-input" id="user-search" placeholder="搜索用户名或邮箱..." oninput="searchUsers()" />
+            <select class="select" id="user-role-filter" onchange="searchUsers()">
+              <option value="">全部角色</option>
+              <option value="admin">管理员</option>
+              <option value="enterprise">企业版</option>
+              <option value="pro">专业版</option>
+              <option value="plus">标准版</option>
+              <option value="lite">入门版</option>
+              <option value="commercial">商业版</option>
+              <option value="free">免费版</option>
+            </select>
+          </div>
+        </div>
+        <div id="user-table-container">
+          <div class="loading"><div class="spinner"></div>加载中...</div>
+        </div>
+        <div class="pagination" id="user-pagination"></div>
+      </div>
+    </div>
+
+    <!-- 团队管理 -->
+    <div id="page-teams" class="page">
+      <h2>团队管理</h2>
+      <div class="card">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <input class="input" id="team-name" placeholder="新团队名称" />
+            <select class="select" id="team-plan">
+              <option value="free">免费版</option>
+              <option value="lite">入门版</option>
+              <option value="plus">标准版</option>
+              <option value="pro">专业版</option>
+              <option value="enterprise">企业版</option>
+            </select>
+            <button class="btn btn-primary" onclick="createTeam()">创建团队</button>
+          </div>
+        </div>
+        <div id="team-table-container">
+          <div class="loading"><div class="spinner"></div>加载中...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 用量查询 -->
+    <div id="page-usage" class="page">
+      <h2>用量查询</h2>
+      <div class="stat-grid" id="usage-stats"></div>
+      <div class="card">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <input class="input" id="usage-team-id" placeholder="输入团队 ID 查询" style="width: 200px;" />
+            <button class="btn" onclick="loadTeamUsage()">查询</button>
+            <select class="select" id="usage-days" onchange="loadTeamUsageHistory()">
+              <option value="7">最近7天</option>
+              <option value="30" selected>最近30天</option>
+              <option value="90">最近90天</option>
+            </select>
+          </div>
+        </div>
+        <div id="usage-result"></div>
+        <div class="chart-container" id="usage-chart-container" style="display:none">
+          <canvas id="usage-chart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- 系统统计 -->
+    <div id="page-stats" class="page">
+      <h2>系统统计</h2>
+      <div class="stat-grid" id="stats-grid"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div class="card">
+          <h3 style="font-size:14px;margin-bottom:12px;color:var(--text-secondary)">任务状态分布</h3>
+          <div style="height:260px"><canvas id="stats-pie-chart"></canvas></div>
+        </div>
+        <div class="card">
+          <h3 style="font-size:14px;margin-bottom:12px;color:var(--text-secondary)">任务趋势 (最近30天)</h3>
+          <div style="height:260px"><canvas id="stats-chart"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 订阅计划 -->
+    <div id="page-plans" class="page">
+      <h2>订阅计划管理 <button class="btn btn-primary" onclick="addPlanRow()">+ 新增计划</button></h2>
+      <div class="card">
+        <div id="plans-table-container"></div>
+        <div style="margin-top:20px;display:flex;gap:8px">
+          <button class="btn btn-primary" onclick="savePlansTable()">保存计划配置</button>
+          <span id="plan-msg"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 支付订单 -->
+    <div id="page-orders" class="page">
+      <h2>支付订单管理</h2>
+      <div class="stat-grid" id="orders-stats"></div>
+      <div class="card">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <select class="select" id="orders-status-filter" onchange="loadOrders()">
+              <option value="">全部状态</option>
+              <option value="pending">待支付</option>
+              <option value="paid">已支付</option>
+              <option value="expired">已过期</option>
+              <option value="cancelled">已取消</option>
+            </select>
+            <select class="select" id="orders-period-filter" onchange="loadOrders()">
+              <option value="7">最近7天</option>
+              <option value="30" selected>最近30天</option>
+              <option value="90">最近90天</option>
+              <option value="all">全部</option>
+            </select>
+          </div>
+          <div class="toolbar-right">
+            <input class="search-input" id="orders-search" placeholder="搜索订单ID/用户名..." oninput="loadOrdersDelayed()" />
+          </div>
+        </div>
+        <div id="orders-table-container">
+          <div class="loading"><div class="spinner"></div>加载中...</div>
+        </div>
+        <div class="pagination" id="orders-pagination"></div>
+      </div>
+    </div>
+
+    <!-- 操作日志 -->
+    <div id="page-logs" class="page">
+      <h2>操作日志</h2>
+      <div class="stat-grid" id="log-stats"></div>
+      <div class="card">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <select class="select" id="log-type-filter" onchange="loadLogs()">
+              <option value="">全部操作类型</option>
+              <option value="create">创建</option>
+              <option value="update">更新</option>
+              <option value="delete">删除</option>
+              <option value="login">登录</option>
+            </select>
+            <select class="select" id="log-target-filter" onchange="loadLogs()">
+              <option value="">全部目标类型</option>
+              <option value="user">用户</option>
+              <option value="team">团队</option>
+              <option value="auth">认证</option>
+              <option value="plan">计划</option>
+              <option value="usage">用量</option>
+            </select>
+            <select class="select" id="log-success-filter" onchange="loadLogs()">
+              <option value="">全部状态</option>
+              <option value="true">成功</option>
+              <option value="false">失败</option>
+            </select>
+          </div>
+        </div>
+        <div id="log-table-container">
+          <div class="loading"><div class="spinner"></div>加载中...</div>
+        </div>
+        <div class="pagination" id="log-pagination"></div>
+      </div>
+    <!-- 插件管理 -->
+    <div id="page-plugin-mgmt" class="page">
+      <h2>插件管理</h2>
+      <div class="card">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <input class="search-input" id="plugin-search" placeholder="搜索插件..." oninput="loadPlugins()" />
+            <select class="select" id="plugin-element-filter" onchange="loadPlugins()">
+              <option value="">全部分类</option>
+              <option value="metal">金</option>
+              <option value="wood">木</option>
+              <option value="water">水</option>
+              <option value="fire">火</option>
+              <option value="earth">土</option>
+            </select>
+          </div>
+        </div>
+        <div id="plugin-list-container"><div class="loading"><div class="spinner"></div>加载中...</div></div>
+      </div>
+    </div>
+    </div>
+  </div>
+</div>
+
+<!-- 创建用户弹窗 -->
+<div class="modal-overlay" id="create-user-modal" style="display:none">
+  <div class="modal">
+    <h3>创建新用户</h3>
+    <div class="form-group">
+      <label>用户名 *</label>
+      <input class="input" id="new-user-name" placeholder="输入用户名" />
+    </div>
+    <div class="form-group">
+      <label>邮箱 *</label>
+      <input class="input" id="new-user-email" type="email" placeholder="输入邮箱" />
+    </div>
+    <div class="form-group">
+      <label>密码 *</label>
+      <input class="input" id="new-user-password" type="password" placeholder="输入密码" />
+    </div>
+    <div class="form-group">
+      <label>角色</label>
+      <select class="select" id="new-user-role">
+        <option value="free">免费版</option>
+        <option value="lite">入门版</option>
+        <option value="plus">标准版</option>
+        <option value="pro">专业版</option>
+        <option value="enterprise">企业版</option>
+        <option value="admin">管理员</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeCreateUserModal()">取消</button>
+      <button class="btn btn-primary" onclick="createUser()">创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- 编辑用户弹窗 -->
+<div class="modal-overlay" id="edit-user-modal" style="display:none">
+  <div class="modal">
+    <h3>编辑用户</h3>
+    <div class="form-group">
+      <label>用户名</label>
+      <input class="input" id="edit-user-name" disabled />
+    </div>
+    <div class="form-group">
+      <label>邮箱</label>
+      <input class="input" id="edit-user-email" disabled />
+    </div>
+    <div class="form-group">
+      <label>角色</label>
+      <select class="select" id="edit-user-role">
+        <option value="free">免费版</option>
+        <option value="lite">入门版</option>
+        <option value="plus">标准版</option>
+        <option value="pro">专业版</option>
+        <option value="enterprise">企业版</option>
+        <option value="admin">管理员</option>
+      </select>
+    </div>
+    <input type="hidden" id="edit-user-id" />
+    <div class="modal-actions">
+      <button class="btn" onclick="closeEditUserModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveUser()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast 容器 -->
+<div class="toast-container" id="toast-container"></div>
+
+<script>
+const BASE = location.origin;
+let TOKEN = localStorage.getItem("admin-token") || "";
+let currentPage = { users: 1, teams: 1 };
+let userData = { users: [], total: 0, page: 1, limit: 50 };
+
+// API 封装
+async function api(path, opts = {}) {
+  const res = await fetch(BASE + path, {
+    headers: { "Content-Type": "application/json", ...(TOKEN ? { Authorization: "Bearer " + TOKEN } : {}) }, ...opts,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || res.statusText);
+  }
+  return res.json();
+}
+
+function $(id) { return document.getElementById(id); }
+
+// Toast 通知
+function showToast(msg, type = "info") {
+  const container = $("toast-container");
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${type}`;
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
+// 页面切换
+function showPage(name) {
+  document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+  document.querySelectorAll(".sidebar a").forEach(a => {
+    a.classList.toggle("active", a.dataset.page === name);
+  });
+  $(`page-${name}`).classList.add("active");
+
+  const mainContent = $("main-content");
+  if (name === "login") {
+    mainContent.style.display = "none";
+    $("sidebar").style.display = "none";
+  } else {
+    mainContent.style.display = "block";
+    $("sidebar").style.display = "flex";
+  }
+
+  if (name === "users") loadUsers();
+  if (name === "teams") loadTeams();
+  if (name === "usage") { loadGlobalUsage(); loadMyUsage(); }
+  if (name === "orders") loadOrders();
+  if (name === "stats") loadStats();
+  if (name === "plans") loadPlansTable();
+  if (name === "logs") { logPage = 1; loadLogs(); }
+	  if (name === "plugin-mgmt") loadPlugins();
+}
+
+// 导航事件
+document.querySelectorAll(".sidebar a[data-page]").forEach(a => {
+  a.addEventListener("click", () => showPage(a.dataset.page));
+});
+
+// 登录
+async function doLogin() {
+  const user = $("login-user").value, pass = $("login-pass").value;
+  if (!user || !pass) { showToast("请填写用户名和密码", "error"); return; }
+  try {
+    const data = await api("/auth/login", { method: "POST", body: JSON.stringify({ username: user, password: pass }) });
+    TOKEN = data.token;
+    localStorage.setItem("admin-token", TOKEN);
+    showToast("登录成功", "success");
+    showPage("users");
+  } catch (e) { showToast(e.message, "error"); }
+}
+
+function logout() {
+  TOKEN = "";
+  localStorage.removeItem("admin-token");
+  showPage("login");
+}
+
+// ===== 用户管理 =====
+async function loadUsers() {
+  const search = $("user-search").value;
+  const role = $("user-role-filter").value;
+  const page = currentPage.users;
+  const limit = 50;
+  const params = new URLSearchParams({ page, limit: limit.toString() });
+  if (search) params.append("search", search);
+  if (role) params.append("role", role);
+
+  try {
+    const d = await api("/auth/users?" + params);
+    userData = d;
+    renderUserTable(d.users);
+    renderPagination("user-pagination", d.page, d.total, d.limit, (p) => { currentPage.users = p; loadUsers(); });
+  } catch(e) {
+    $("user-table-container").innerHTML = `<div class="empty-state" style="color:var(--danger)">${e.message}</div>`;
+  }
+}
+
+function renderUserTable(users) {
+  if (!users.length) {
+    $("user-table-container").innerHTML = '<div class="empty-state">暂无用户</div>';
+    return;
+  }
+  $("user-table-container").innerHTML = `<table>
+    <thead><tr><th>用户名</th><th>邮箱</th><th>角色</th><th>团队ID</th><th>创建时间</th><th>最近登录</th><th>操作</th></tr></thead>
+    <tbody>${users.map(u => `<tr>
+      <td>${u.username}</td>
+      <td>${u.email || "-"}</td>
+      <td><span class="tag tag-${u.role}">${u.role}</span></td>
+      <td>${u.teamId || "-"}</td>
+      <td>${u.createdAt?.slice(0,10) || "-"}</td>
+      <td>${u.lastLoginAt?.slice(0,10) || "-"}</td>
+      <td>
+        <button class="btn btn-sm" onclick="showEditUserModal('${u.id}', '${u.username}', '${u.email}', '${u.role}')">编辑</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}')">删除</button>
+      </td>
+    </tr>`).join("")}</tbody></table>`;
+}
+
+function searchUsers() {
+  currentPage.users = 1;
+  loadUsers();
+}
+
+function renderPagination(id, page, total, limit, onChange) {
+  const totalPages = Math.ceil(total / limit);
+  if (totalPages <= 1) { $(id).innerHTML = ""; return; }
+  const html = `<button class="btn btn-sm" ${page <= 1 ? "disabled" : ""} data-page="${page - 1}">上一页</button>
+    <span>${page} / ${totalPages}</span>
+    <button class="btn btn-sm" ${page >= totalPages ? "disabled" : ""} data-page="${page + 1}">下一页</button>`;
+  $(id).innerHTML = html;
+  $(id).querySelectorAll("button[data-page]").forEach(btn => {
+    btn.onclick = () => { if (!btn.disabled) onChange(parseInt(btn.dataset.page)); };
+  });
+}
+
+// 创建用户
+function showCreateUserModal() {
+  $("create-user-modal").style.display = "flex";
+  $("new-user-name").value = "";
+  $("new-user-email").value = "";
+  $("new-user-password").value = "";
+  $("new-user-role").value = "free";
+}
+
+function closeCreateUserModal() {
+  $("create-user-modal").style.display = "none";
+}
+
+async function createUser() {
+  const username = $("new-user-name").value.trim();
+  const email = $("new-user-email").value.trim();
+  const password = $("new-user-password").value;
+  const role = $("new-user-role").value;
+
+  if (!username || !email || !password) { showToast("请填写所有必填项", "error"); return; }
+
+  try {
+    await api("/auth/users", { method: "POST", body: JSON.stringify({ username, email, password, role }) });
+    showToast("用户创建成功", "success");
+    closeCreateUserModal();
+    loadUsers();
+  } catch (e) { showToast(e.message, "error"); }
+}
+
+// 编辑用户
+function showEditUserModal(id, username, email, role) {
+  $("edit-user-id").value = id;
+  $("edit-user-name").value = username;
+  $("edit-user-email").value = email;
+  $("edit-user-role").value = role;
+  $("edit-user-modal").style.display = "flex";
+}
+
+function closeEditUserModal() {
+  $("edit-user-modal").style.display = "none";
+}
+
+async function saveUser() {
+  const id = $("edit-user-id").value;
+  const role = $("edit-user-role").value;
+
+  try {
+    await api("/auth/users/" + id, { method: "PUT", body: JSON.stringify({ role }) });
+    showToast("用户更新成功", "success");
+    closeEditUserModal();
+    loadUsers();
+  } catch (e) { showToast(e.message, "error"); }
+}
+
+async function deleteUser(id) {
+  if (!confirm("确定要删除该用户吗？此操作不可恢复。")) return;
+  try {
+    await api("/auth/users/" + id, { method: "DELETE" });
+    showToast("用户已删除", "success");
+    loadUsers();
+  } catch (e) { showToast(e.message, "error"); }
+}
+
+// ===== 团队管理 =====
+async function loadTeams() {
+  try {
+    const d = await api("/admin/teams");
+    renderTeamTable(d.teams);
+  } catch(e) {
+    $("team-table-container").innerHTML = `<div class="empty-state" style="color:var(--danger)">${e.message}</div>`;
+  }
+}
+
+function renderTeamTable(teams) {
+  if (!teams?.length) {
+    $("team-table-container").innerHTML = '<div class="empty-state">暂无团队</div>';
+    return;
+  }
+  $("team-table-container").innerHTML = `<table>
+    <thead><tr><th>名称</th><th>计划</th><th>成员数</th><th>邀请码</th><th>创建时间</th><th>操作</th></tr></thead>
+    <tbody>${teams.map(t => `<tr>
+      <td><a href="#" onclick="showTeamDetail('${t.id}')">${t.name}</a></td>
+      <td><span class="tag tag-${t.plan}">${t.plan}</span></td>
+      <td>${t.memberIds?.length || 0}</td>
+      <td><code style="color:var(--success)">${t.inviteCode}</code> <span class="copy-btn" onclick="copyInviteCode('${t.inviteCode}')">复制</span></td>
+      <td>${t.createdAt?.slice(0,10) || "-"}</td>
+      <td><button class="btn btn-sm btn-danger" onclick="deleteTeam('${t.id}')">删除</button></td>
+    </tr>`).join("")}</tbody></table>
+    <div class="team-detail" id="team-detail" style="display:none">
+      <h4 id="team-detail-title" style="margin-bottom:12px"></h4>
+      <div id="team-member-list"></div>
+    </div>`;
+}
+
+async function showTeamDetail(id) {
+  try {
+    const d = await api("/teams/" + id + "/members");
+    $("team-detail").style.display = "block";
+    $("team-detail-title").textContent = "团队成员";
+    $("team-member-list").innerHTML = d.members?.length ? `<table><thead><tr><th>用户名</th><th>邮箱</th><th>角色</th></tr></thead>
+      <tbody>${d.members.map(m => `<tr><td>${m.username}</td><td>${m.email || "-"}</td><td><span class="tag tag-${m.teamRole}">${m.teamRole || "member"}</span></td></tr>`).join("")}</tbody></table>` : "暂无成员";
+  } catch(e) { showToast(e.message, "error"); }
+}
+
+function copyInviteCode(code) {
+  navigator.clipboard.writeText(code);
+  showToast("邀请码已复制", "success");
+}
+
+async function createTeam() {
+  const name = $("team-name").value.trim();
+  if (!name) { showToast("请输入团队名称", "error"); return; }
+  try {
+    await api("/admin/teams", { method: "POST", body: JSON.stringify({ name, plan: $("team-plan").value }) });
+    showToast("团队创建成功", "success");
+    $("team-name").value = "";
+    loadTeams();
+  } catch(e) { showToast(e.message, "error"); }
+}
+
+async function deleteTeam(id) {
+  if (!confirm("确定删除该团队？")) return;
+  try {
+    await api("/teams/" + id, { method: "DELETE" });
+    showToast("团队已删除", "success");
+    loadTeams();
+  } catch(e) { showToast(e.message, "error"); }
+}
+
+// ===== 用量查询 =====
+async function loadGlobalUsage() {
+  try {
+    const d = await api("/usage/global?days=30");
+    $("usage-stats").innerHTML = [
+      ["总 Token", d.totalTokens?.toLocaleString() || 0],
+      ["总任务", d.totalTasks?.toLocaleString() || 0],
+      ["活跃团队", d.activeTeams || 0],
+      ["活跃用户", d.activeUsers || 0],
+    ].map(([k,v]) => `<div class="stat-card"><div class="value">${v}</div><div class="label">${k}</div></div>`).join("");
+  } catch(e) { $("usage-stats").innerHTML = ""; }
+}
+
+async function loadMyUsage() {
+  try {
+    const d = await api("/usage/me");
+    if (!$("usage-result").innerHTML) {
+      $("usage-result").innerHTML += `<p>我的本月用量: ${d.tokensUsed?.toLocaleString() || 0} tokens · ${d.taskCount || 0} 任务</p>`;
+    }
+  } catch(e) {}
+}
+
+async function loadTeamUsage() {
+  const id = $("usage-team-id").value.trim();
+  if (!id) { showToast("请输入团队ID", "error"); return; }
+  try {
+    const d = await api("/usage/team/" + id);
+    $("usage-result").innerHTML = `<p style="margin-bottom:12px">团队本月用量: <strong>${d.tokensUsed?.toLocaleString() || 0}</strong> tokens · <strong>${d.taskCount || 0}</strong> 任务 · <strong>${d.userCount || 0}</strong> 活跃用户</p>`;
+    loadTeamUsageHistory();
+  } catch(e) { showToast(e.message, "error"); }
+}
+
+let usageChart = null;
+async function loadTeamUsageHistory() {
+  const id = $("usage-team-id").value.trim();
+  if (!id) return;
+  const days = $("usage-days").value;
+
+  try {
+    const d = await api(`/usage/team/${id}/history?days=${days}`);
+    $("usage-chart-container").style.display = "block";
+
+    const ctx = document.getElementById("usage-chart").getContext("2d");
+    if (usageChart) usageChart.destroy();
+
+    usageChart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: d.history?.map(h => h.date.slice(5)) || [],
+        datasets: [{
+          label: "Token 用量",
+          data: d.history?.map(h => h.tokensUsed) || [],
+          borderColor: "#f0b429",
+          backgroundColor: "rgba(240,180,41,0.1)",
+          fill: true,
+          tension: 0.3
+        }, {
+          label: "任务数",
+          data: d.history?.map(h => h.taskCount) || [],
+          borderColor: "#805ad5",
+          backgroundColor: "rgba(128,90,213,0.1)",
+          fill: true,
+          tension: 0.3,
+          yAxisID: "y1"
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        scales: {
+          y: { beginAtZero: true, grid: { color: "#222" }, ticks: { color: "#888" } },
+          y1: { beginAtZero: true, position: "right", grid: { display: false }, ticks: { color: "#888" } },
+          x: { grid: { color: "#222" }, ticks: { color: "#888" } }
+        },
+        plugins: { legend: { labels: { color: "#e0e0e0" } } }
+      }
+    });
+  } catch(e) {}
+}
+
+// ===== 系统统计 =====
+let statsChart = null, statsPieChart = null;
+
+async function loadStats() {
+  try {
+    const d = await api("/stats");
+    const s = await api("/admin/status");
+    const global = await api("/usage/global?days=30").catch(() => ({}));
+
+    $("stats-grid").innerHTML = [
+      ["运行时间", formatUptime(s.uptime)],
+      ["总任务", (d.totalTasks || 0).toLocaleString()],
+      ["已完成", (d.completedTasks || 0).toLocaleString()],
+      ["失败", (d.failedTasks || 0).toLocaleString()],
+      ["活跃任务", d.runningTasks || 0],
+      ["存储", s.storageMode === "postgresql" ? "PostgreSQL" : "JSONL"],
+    ].map(([k,v]) => `<div class="stat-card"><div class="value">${v}</div><div class="label">${k}</div></div>`).join("");
+
+    const ctx = document.getElementById("stats-chart").getContext("2d");
+    if (statsChart) statsChart.destroy();
+
+    const history = d.taskHistory || [];
+    statsChart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: history.map(h => h.date ? h.date.slice(5) : ""),
+        datasets: [
+          { label: "总任务", data: history.map(h => h.total || 0), borderColor: "#f0b429", backgroundColor: "rgba(240,180,41,0.1)", fill: true, tension: 0.3 },
+          { label: "已完成", data: history.map(h => h.completed || 0), borderColor: "#48bb78", backgroundColor: "rgba(72,187,120,0.1)", fill: true, tension: 0.3 },
+          { label: "失败", data: history.map(h => h.failed || 0), borderColor: "#e8505a", backgroundColor: "rgba(232,80,90,0.1)", fill: true, tension: 0.3 },
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        scales: { y: { beginAtZero: true, grid: { color: "#222" }, ticks: { color: "#888" } }, x: { grid: { display: false }, ticks: { color: "#888" } } },
+        plugins: { legend: { labels: { color: "#e0e0e0", boxWidth: 12, padding: 12 } } }
+      }
+    });
+
+    const pieCtx = document.getElementById("stats-pie-chart").getContext("2d");
+    if (statsPieChart) statsPieChart.destroy();
+
+    const total = d.completedTasks || 0;
+    const failed = d.failedTasks || 0;
+    const running = d.runningTasks || 0;
+    const other = Math.max(0, (d.totalTasks || 0) - total - failed - running);
+
+    statsPieChart = new Chart(pieCtx, {
+      type: "doughnut",
+      data: {
+        labels: ["已完成", "失败", "运行中", "其他"],
+        datasets: [{
+          data: [total, failed, running, other],
+          backgroundColor: ["#48bb78", "#e8505a", "#f0b429", "#805ad5"],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: "bottom", labels: { color: "#e0e0e0", padding: 12, boxWidth: 12 } }
+        }
+      }
+    });
+  } catch(e) { showToast(e.message, "error"); }
+}
+
+function formatUptime(seconds) {
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  let parts = [];
+  if (d > 0) parts.push(d + "天");
+  if (h > 0) parts.push(h + "时");
+  parts.push(m + "分");
+  return parts.join(" ");
+}
+
+// ===== 订阅计划 (表格版) =====
+let planRows = [];
+
+async function loadPlansTable() {
+  try {
+    const d = await api("/plans");
+    const plans = d.plans || {};
+    planRows = Object.entries(plans).map(([name, p]) => ({
+      name,
+      nameZh: p.nameZh || (name === "free" ? "免费版" : name === "lite" ? "入门版" : name === "plus" ? "标准版" : name === "pro" ? "专业版" : name === "enterprise" ? "企业版" : name),
+      priceMonthly: p.priceMonthly || 0,
+      priceYearly: p.priceYearly || 0,
+      maxTokensPerMonth: p.maxTokensPerMonth || 0,
+      maxCallsPer5h: p.maxCallsPer5h || 0,
+      maxUsers: p.maxUsers || 0,
+      maxTeams: p.maxTeams || 0,
+      features: Array.isArray(p.features) ? p.features.join(", ") : (p.features || ""),
+      popular: p.popular || false,
+    }));
+    renderPlansTable();
+    $("plan-msg").textContent = "";
+  } catch(e) { showToast(e.message, "error"); }
+}
+
+function renderPlansTable() {
+  $("plans-table-container").innerHTML = `<div class="plans-table-wrap"><table>
+    <thead><tr>
+      <th>标识</th><th>名称</th><th>月价(元)</th><th>年价(元)</th><th>月Token配额</th><th>5h调用次数</th><th>最大用户数</th><th>最大团队数</th><th>特性</th><th>热门</th><th>操作</th>
+    </tr></thead>
+    <tbody>${planRows.map((p, i) => `<tr>
+      <td><input class="plan-table-input name-input" data-idx="${i}" data-field="name" value="${escHtml(p.name)}" placeholder="free/lite/plus/pro/enterprise" /></td>
+      <td><input class="plan-table-input" data-idx="${i}" data-field="nameZh" value="${escHtml(p.nameZh)}" /></td>
+      <td><input class="plan-table-input" type="number" data-idx="${i}" data-field="priceMonthly" value="${p.priceMonthly}" /></td>
+      <td><input class="plan-table-input" type="number" data-idx="${i}" data-field="priceYearly" value="${p.priceYearly}" /></td>
+      <td><input class="plan-table-input" type="number" data-idx="${i}" data-field="maxTokensPerMonth" value="${p.maxTokensPerMonth}" /></td>
+      <td><input class="plan-table-input" type="number" data-idx="${i}" data-field="maxCallsPer5h" value="${p.maxCallsPer5h}" /></td>
+      <td><input class="plan-table-input" type="number" data-idx="${i}" data-field="maxUsers" value="${p.maxUsers}" /></td>
+      <td><input class="plan-table-input" type="number" data-idx="${i}" data-field="maxTeams" value="${p.maxTeams}" /></td>
+      <td><input class="plan-table-input features-input" data-idx="${i}" data-field="features" value="${escHtml(p.features)}" placeholder="逗号分隔" /></td>
+      <td><input type="checkbox" data-idx="${i}" data-field="popular" ${p.popular ? "checked" : ""} style="accent-color:var(--accent);width:18px;height:18px;cursor:pointer" /></td>
+      <td><button class="btn btn-sm btn-danger" onclick="deletePlanRow(${i})">删除</button></td>
+    </tr>`).join("")}</tbody></table></div>`;
+
+  document.querySelectorAll('[data-field="popular"]').forEach(cb => {
+    cb.addEventListener("change", function() {
+      const idx = parseInt(this.dataset.idx);
+      if (!isNaN(idx) && planRows[idx]) planRows[idx].popular = this.checked;
+    });
+  });
+
+  document.querySelectorAll(".plans-table-wrap input[data-field]:not([data-field='popular'])").forEach(inp => {
+    inp.addEventListener("change", function() {
+      const idx = parseInt(this.dataset.idx);
+      const field = this.dataset.field;
+      if (isNaN(idx) || !planRows[idx] || !field) return;
+      if (field === "features" || field === "name" || field === "nameZh") {
+        planRows[idx][field] = this.value;
+      } else {
+        planRows[idx][field] = parseFloat(this.value) || 0;
+      }
+    });
+  });
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function addPlanRow() {
+  planRows.push({
+    name: "", nameZh: "新计划", priceMonthly: 0, priceYearly: 0,
+    maxTokensPerMonth: 100000, maxCallsPer5h: 240, maxUsers: 5, maxTeams: 1,
+    features: "", popular: false,
+  });
+  renderPlansTable();
+  showToast("已添加新行，请填写配置", "info");
+}
+
+function deletePlanRow(idx) {
+  if (!confirm("确定删除该计划？")) return;
+  planRows.splice(idx, 1);
+  renderPlansTable();
+}
+
+async function savePlansTable() {
+  const plans = {};
+  planRows.forEach(p => {
+    if (!p.name) return;
+    plans[p.name] = {
+      nameZh: p.nameZh,
+      priceMonthly: p.priceMonthly,
+      priceYearly: p.priceYearly,
+      maxTokensPerMonth: p.maxTokensPerMonth,
+      maxCallsPer5h: p.maxCallsPer5h,
+      maxUsers: p.maxUsers,
+      maxTeams: p.maxTeams,
+      features: p.features ? p.features.split(",").map(s => s.trim()).filter(Boolean) : [],
+      popular: p.popular,
+    };
+  });
+  try {
+    await api("/plans/save", { method: "POST", body: JSON.stringify({ plans }) });
+    showToast("配置已保存", "success");
+  } catch(e) { showToast("保存失败: " + e.message, "error"); }
+}
+
+// ===== 支付订单 =====
+let ordersPage = 1;
+let ordersSearchTimeout = null;
+
+function loadOrdersDelayed() {
+  if (ordersSearchTimeout) clearTimeout(ordersSearchTimeout);
+  ordersSearchTimeout = setTimeout(() => { ordersPage = 1; loadOrders(); }, 300);
+}
+
+async function loadOrders() {
+  const status = $("orders-status-filter").value;
+  const period = $("orders-period-filter").value;
+  const search = $("orders-search").value;
+
+  const params = new URLSearchParams({ page: ordersPage, limit: "50" });
+  if (status) params.append("status", status);
+  if (period && period !== "all") params.append("days", period);
+  if (search) params.append("search", search);
+
+  try {
+    const [list, stats] = await Promise.all([
+      api("/admin/orders?" + params),
+      api("/admin/orders/stats?" + (period && period !== "all" ? "days=" + period : "")).catch(() => ({}))
+    ]);
+    renderOrdersStats(stats);
+    renderOrders(list.orders || list, list.page || ordersPage, list.total || 0, list.limit || 50);
+  } catch(e) {
+    $("orders-table-container").innerHTML = '<div class="empty-state" style="color:var(--danger)">' + e.message + '</div>';
+  }
+}
+
+function renderOrdersStats(stats) {
+  if (!stats || !stats.totalOrders) {
+    $("orders-stats").innerHTML = "";
+    return;
+  }
+  $("orders-stats").innerHTML = [
+    ["总订单", stats.totalOrders],
+    ["已支付", stats.paidOrders || 0],
+    ["待支付", stats.pendingOrders || 0],
+    ["总收入(元)", (stats.totalRevenue || 0).toFixed(2)],
+  ].map(([k,v]) => '<div class="stat-card"><div class="value">' + (typeof v === "number" ? v.toLocaleString() : v) + '</div><div class="label">' + k + '</div></div>').join("");
+}
+
+function renderOrders(orders, page, total, limit) {
+  if (!orders?.length) {
+    $("orders-table-container").innerHTML = '<div class="empty-state">暂无订单</div>';
+    $("orders-pagination").innerHTML = "";
+    return;
+  }
+  const statusMap = { pending: "待支付", paid: "已支付", expired: "已过期", cancelled: "已取消", refunded: "已退款" };
+  $("orders-table-container").innerHTML = "<table><thead><tr><th>订单ID</th><th>用户</th><th>计划</th><th>周期</th><th>金额(元)</th><th>状态</th><th>支付方式</th><th>创建时间</th><th>支付时间</th><th>操作</th></tr></thead><tbody>" +
+    orders.map(o => "<tr><td><span class=\"order-id-cell\">" + (o.id ? o.id.slice(0,12) : "-") + "</span></td>" +
+      "<td><span class=\"order-user-cell\" title=\"" + escHtml(o.username || o.userId || "") + "\">" + escHtml(o.username || o.userId || "-") + "</span></td>" +
+      "<td>" + escHtml(o.planId || o.plan || "-") + "</td>" +
+      "<td>" + (o.period === "yearly" ? "年付" : o.period === "monthly" ? "月付" : "-") + "</td>" +
+      "<td>" + (o.amount ? o.amount.toFixed(2) : "-") + "</td>" +
+      "<td><span class=\"status-badge " + o.status + "\">" + (statusMap[o.status] || o.status) + "</span></td>" +
+      "<td>" + (o.paymentMethod || "-") + "</td>" +
+      "<td>" + (o.createdAt ? o.createdAt.slice(0,19).replace("T"," ") : "-") + "</td>" +
+      "<td>" + (o.paidAt ? o.paidAt.slice(0,19).replace("T"," ") : "-") + "</td>" +
+      "<td>" + (o.status === "pending" ? "<button class=\"btn btn-sm btn-primary\" onclick=\"markPaid('" + o.id + "')\">标记支付</button>" : "-") + "</td></tr>").join("") +
+    "</tbody></table>";
+  renderOrdersPagination(page, total, limit);
+}
+
+function renderOrdersPagination(page, total, limit) {
+  const totalPages = Math.ceil(total / limit);
+  if (totalPages <= 1) { $("orders-pagination").innerHTML = ""; return; }
+  const html = '<button class="btn btn-sm" ' + (page <= 1 ? "disabled" : "") + ' data-page="' + (page - 1) + '">上一页</button>' +
+    '<span>' + page + ' / ' + totalPages + '</span>' +
+    '<button class="btn btn-sm" ' + (page >= totalPages ? "disabled" : "") + ' data-page="' + (page + 1) + '">下一页</button>';
+  $("orders-pagination").innerHTML = html;
+  $("orders-pagination").querySelectorAll("button[data-page]").forEach(btn => {
+    btn.onclick = function() { if (!this.disabled) { ordersPage = parseInt(this.dataset.page); loadOrders(); } };
+  });
+}
+
+async function markPaid(orderId) {
+  if (!confirm("确认将该订单标记为已支付？")) return;
+  try {
+    await api("/admin/orders/" + orderId + "/mark-paid", { method: "POST" });
+    showToast("订单已标记为已支付", "success");
+    loadOrders();
+  } catch(e) { showToast(e.message, "error"); }
+}
+
+// ===== 操作日志 =====
+let logPage = 1;
+async function loadLogs() {
+  const type = $("log-type-filter").value;
+  const targetType = $("log-target-filter").value;
+  const success = $("log-success-filter").value;
+  const params = new URLSearchParams({ page: logPage, limit: "50" });
+  if (type) params.append("type", type);
+  if (targetType) params.append("targetType", targetType);
+  if (success) params.append("success", success);
+
+  try {
+    const [d, stats] = await Promise.all([
+      api("/admin/logs?" + params),
+      api("/admin/logs/stats?days=30").catch(() => ({}))
+    ]);
+    renderLogStats(stats);
+    renderLogTable(d.logs);
+    renderLogPagination(d.page, d.total, d.limit);
+  } catch(e) {
+    $("log-table-container").innerHTML = `<div class="empty-state" style="color:var(--danger)">${e.message}</div>`;
+  }
+}
+
+function renderLogStats(stats) {
+  if (!stats || !stats.totalOperations) {
+    $("log-stats").innerHTML = "";
+    return;
+  }
+  $("log-stats").innerHTML = [
+    ["总操作", stats.totalOperations],
+    ["成功", stats.successCount],
+    ["失败", stats.failureCount],
+    ["活跃用户", stats.byOperator?.length || 0],
+  ].map(([k,v]) => `<div class="stat-card"><div class="value">${v}</div><div class="label">${k}</div></div>`).join("");
+}
+
+function renderLogTable(logs) {
+  if (!logs?.length) {
+    $("log-table-container").innerHTML = '<div class="empty-state">暂无日志</div>';
+    return;
+  }
+  const typeMap = { create: "创建", update: "更新", delete: "删除", login: "登录", logout: "退出", query: "查询" };
+  const targetMap = { user: "用户", team: "团队", auth: "认证", plan: "计划", usage: "用量", system: "系统" };
+  $("log-table-container").innerHTML = `<table>
+    <thead><tr><th>时间</th><th>操作人</th><th>操作类型</th><th>目标类型</th><th>目标名称</th><th>详情</th><th>状态</th></tr></thead>
+    <tbody>${logs.map(l => `<tr>
+      <td>${l.timestamp?.slice(0, 19).replace("T", " ") || "-"}</td>
+      <td>${l.operatorName || "-"}</td>
+      <td><span class="tag tag-${l.type === "delete" ? "admin" : l.type === "create" ? "pro" : "free"}">${typeMap[l.type] || l.type}</span></td>
+      <td>${targetMap[l.targetType] || l.targetType}</td>
+      <td>${l.targetName || "-"}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${l.details || ""}">${l.details || "-"}</td>
+      <td>${l.success ? '<span style="color:var(--success)">成功</span>' : '<span style="color:var(--danger)">失败</span>'}</td>
+    </tr>`).join("")}</tbody></table>`;
+}
+
+function renderLogPagination(page, total, limit) {
+  const totalPages = Math.ceil(total / limit);
+  if (totalPages <= 1) { $("log-pagination").innerHTML = ""; return; }
+  const html = `<button class="btn btn-sm" ${page <= 1 ? "disabled" : ""} data-page="${page - 1}">上一页</button>
+    <span>${page} / ${totalPages}</span>
+    <button class="btn btn-sm" ${page >= totalPages ? "disabled" : ""} data-page="${page + 1}">下一页</button>`;
+  $("log-pagination").innerHTML = html;
+  $("log-pagination").querySelectorAll("button[data-page]").forEach(btn => {
+    btn.onclick = () => { if (!btn.disabled) { logPage = parseInt(btn.dataset.page); loadLogs(); } };
+  });
+}
+
+// ===== 插件管理 =====
+async function loadPlugins() {
+  const search = document.getElementById("plugin-search").value;
+  const element = document.getElementById("plugin-element-filter").value;
+  try {
+    let url = "/admin/plugins";
+    const params = new URLSearchParams();
+    if (search) params.append("q", search);
+    if (element) params.append("element", element);
+    const qs = params.toString();
+    if (qs) url += "?" + qs;
+    const d = await api(url);
+    const plugins = d.plugins || [];
+    if (!plugins.length) {
+      document.getElementById("plugin-list-container").innerHTML = "<div class=\"empty-state\">暂无插件</div>";
+      return;
+    }
+    const elementLabels = { metal: "金", wood: "木", water: "水", fire: "火", earth: "土" };
+    document.getElementById("plugin-list-container").innerHTML = "<table><thead><tr><th>名称</th><th>显示名</th><th>作者</th><th>分类</th><th>版本</th><th>下载量</th><th>评分</th></tr></thead><tbody>" +
+      plugins.map(function(p) {
+        return "<tr><td>" + escHtml(p.name) + "</td><td>" + escHtml(p.displayName) + "</td><td>" + escHtml(p.author) + "</td><td>" + (elementLabels[p.element] || p.element || "-") + "</td><td>" + escHtml(p.latestVersion || "-") + "</td><td>" + (p.downloads || 0) + "</td><td>" + (p.rating || "-") + "</td></tr>";
+      }).join("") + "</tbody></table>";
+  } catch(e) {
+    document.getElementById("plugin-list-container").innerHTML = "<div class=\"empty-state\" style=\"color:var(--danger)\">" + e.message + "</div>";
+  }
+}
+// 初始化
+(async function init() {
+  try {
+    await api("/auth/me");
+    showPage("users");
+  } catch {
+    showPage("login");
+  }
+})();
+
+// 回车登录
+$("login-pass").addEventListener("keypress", e => { if (e.key === "Enter") doLogin(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+	"name": "@xuancode/code-intelligence",
+	"version": "1.5.103",
+	"private": true,
+	"type": "module",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"license": "Apache-2.0 OR Commercial",
+	"dependencies": {
+		"@xuancode/types": "workspace:*"
+	}
+}

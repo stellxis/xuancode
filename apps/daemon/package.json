@@ -1,0 +1,51 @@
+{
+	"name": "@xuancode/daemon",
+	"version": "1.5.103",
+	"private": true,
+	"type": "module",
+	"main": "./src/index.ts",
+	"scripts": {
+		"start": "tsx src/index.ts",
+		"dev": "tsx watch src/index.ts",
+		"build": "tsup",
+		"build:mobile-html": "node -e \"const fs=require('fs');const h=fs.readFileSync('admin-mobile/index.html','utf-8');const b=Buffer.from(h,'utf-8').toString('base64');fs.writeFileSync('src/mobileHtml.ts','// Auto-generated from admin-mobile/index.html -- do not edit directly\\n// Run: pnpm build:mobile-html\\n\\nexport const MOBILE_HTML = Buffer.from(\\\"'+b+'\\\",\\\"base64\\\").toString(\\\"utf-8\\\");\\n')\"",
+		"postbuild": "node -e \"require('fs').cpSync('admin',require('path').resolve('..','desktop','dist-daemon','admin'),{recursive:true,force:true})\"",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@parcel/watcher": "^2.5.6",
+		"@xuancode/a2a": "workspace:*",
+		"@xuancode/daemon-protocol": "workspace:*",
+		"@xuancode/code-intelligence": "workspace:*",
+		"@xuancode/context": "workspace:*",
+		"@xuancode/database": "workspace:*",
+		"@xuancode/distiller": "workspace:*",
+		"@xuancode/mcp-server": "workspace:*",
+		"@xuancode/model-adapter": "workspace:*",
+		"@xuancode/model-router": "workspace:*",
+		"@xuancode/optimizer": "workspace:*",
+		"@xuancode/orchestrator": "workspace:*",
+		"@xuancode/permission": "workspace:*",
+		"@xuancode/plugin-duckduckgo": "workspace:*",
+		"@xuancode/plugin-searxng": "workspace:*",
+		"@xuancode/plugin-serpapi": "workspace:*",
+		"@xuancode/plugins": "workspace:*",
+		"@xuancode/session": "workspace:*",
+		"@xuancode/telemetry": "workspace:*",
+		"@xuancode/tools": "workspace:*",
+		"@xuancode/types": "workspace:*",
+		"dotenv": "^16.4.0",
+		"ioredis": "5.10.1",
+		"bullmq": "5.79.2",
+		"pg": "^8.13.0",
+		"mammoth": "^1.12.0",
+		"pdf-parse": "^2.4.5",
+		"screenshot-desktop": "^1.15.0"
+	},
+	"devDependencies": {
+		"tsx": "^4.0.0",
+		"typescript": "^5.0.0",
+		"vitest": "^3.0.0",
+		"@types/pg": "^8.11.0"
+	}
+}

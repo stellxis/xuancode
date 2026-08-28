@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>玄码移动端</title>
+<style>
+:root{--bg-primary:#0d0d0d;--bg-secondary:#111;--bg-tertiary:#1a1a1a;--bg-card:#181818;--border-color:#2a2a2a;--text-primary:#e0e0e0;--text-secondary:#888;--text-muted:#555;--accent:#f0b429;--accent-hover:#d9a020;--accent-bg:rgba(240,180,41,0.12);--danger:#e8505a;--danger-bg:rgba(232,80,90,0.12);--success:#48bb78;--success-bg:rgba(72,187,120,0.12);--info:#5a9cf0;--info-bg:rgba(90,156,240,0.12);--purple:#805ad5;--purple-bg:rgba(128,90,213,0.12);--font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--radius:12px;--radius-sm:8px}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:var(--font);background:var(--bg-primary);color:var(--text-primary);-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;overflow:hidden}
+input,textarea,button{font-family:inherit;font-size:inherit;outline:none;border:none}
+a{color:var(--accent);text-decoration:none}
+::selection{background:var(--accent);color:#000}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border-color);border-radius:2px}
+.safe-top{padding-top:env(safe-area-inset-top,0)}.safe-bottom{padding-bottom:env(safe-area-inset-bottom,0)}
+
+/* App Shell */
+#app{height:100%;display:flex;flex-direction:column;max-width:480px;margin:0 auto}
+#page-header{display:flex;align-items:center;padding:8px 16px;padding-top:calc(8px + env(safe-area-inset-top,0));background:var(--bg-secondary);border-bottom:1px solid var(--border-color);min-height:52px;flex-shrink:0}
+#page-header .back-btn{display:none;width:36px;height:36px;align-items:center;justify-content:center;background:none;color:var(--text-primary);font-size:20px;cursor:pointer;border-radius:50%;margin-right:8px;flex-shrink:0}
+#page-header .back-btn:active{background:var(--bg-tertiary)}
+#page-header .page-title{flex:1;font-size:17px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#page-header .header-action{background:none;color:var(--text-secondary);font-size:14px;padding:6px 12px;cursor:pointer;border-radius:var(--radius-sm);flex-shrink:0}
+#page-header .header-action:active{background:var(--bg-tertiary)}
+#page-content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;overflow-x:hidden}
+.page{display:none;height:100%}.page.active{display:flex;flex-direction:column}
+
+/* Toast */
+#toast-container{position:fixed;top:calc(60px + env(safe-area-inset-top,0));left:50%;transform:translateX(-50%);z-index:9999;pointer-events:none;max-width:360px;width:90%}
+.toast{padding:12px 20px;border-radius:var(--radius-sm);margin-bottom:8px;font-size:14px;text-align:center;animation:toast-in .25s ease;color:#fff}
+.toast.info{background:rgba(90,156,240,0.92)}.toast.success{background:rgba(72,187,120,0.92)}.toast.error{background:rgba(232,80,90,0.92)}.toast.warning{background:rgba(240,180,41,0.92)}
+.toast.out{animation:toast-out .2s ease forwards}
+@keyframes toast-in{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes toast-out{from{opacity:1}to{opacity:0;transform:translateY(-8px)}}
+
+/* Spinner */
+.spinner{width:20px;height:20px;border:2px solid var(--border-color);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;display:inline-block}
+.spinner-lg{width:32px;height:32px;border-width:3px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Loading overlay */
+.loading-overlay{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:12px;color:var(--text-secondary);font-size:14px}
+
+/* Refresh indicator */
+.refresh-indicator{display:none;align-items:center;justify-content:center;padding:12px;color:var(--text-muted);font-size:13px;gap:8px}
+.refresh-indicator.visible{display:flex}
+.refresh-indicator .spinner{width:14px;height:14px;border-width:2px}
+
+/* ========== LOGIN PAGE ========== */
+#page-login{align-items:center;justify-content:center;padding:40px 32px;padding-bottom:calc(40px + env(safe-area-inset-bottom,0))}
+#page-login .login-brand{text-align:center;margin-bottom:40px}
+#page-login .login-brand h1{font-size:28px;font-weight:700;color:var(--accent);margin-bottom:6px}
+#page-login .login-brand p{font-size:14px;color:var(--text-secondary)}
+#page-login .login-form{width:100%;max-width:320px;display:flex;flex-direction:column;gap:16px}
+#page-login .login-form label{font-size:13px;color:var(--text-secondary);margin-bottom:2px}
+#page-login .login-form input{width:100%;height:48px;padding:0 16px;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:var(--radius-sm);color:var(--text-primary);font-size:16px;transition:border-color .2s}
+#page-login .login-form input:focus{border-color:var(--accent)}
+#page-login .login-form .field{margin-bottom:4px}
+#page-login .login-form .login-btn{height:48px;background:var(--accent);color:#000;font-size:16px;font-weight:600;border-radius:var(--radius-sm);cursor:pointer;margin-top:8px;transition:opacity .2s}
+#page-login .login-form .login-btn:active{opacity:.8}
+#page-login .login-form .login-btn:disabled{opacity:.5;cursor:not-allowed}
+#page-login .login-error{font-size:13px;color:var(--danger);text-align:center;min-height:20px;margin-top:4px}
+
+/* ========== TASK LIST PAGE ========== */
+#page-tasks{display:flex;flex-direction:column}
+.filter-tabs{display:flex;gap:0;padding:8px 16px;background:var(--bg-secondary);border-bottom:1px solid var(--border-color);overflow-x:auto;-webkit-overflow-scrolling:touch;flex-shrink:0}
+.filter-tabs::-webkit-scrollbar{display:none}
+.filter-tab{flex-shrink:0;padding:6px 14px;font-size:13px;color:var(--text-secondary);background:none;cursor:pointer;border-radius:16px;transition:all .2s;white-space:nowrap}
+.filter-tab:active{opacity:.7}
+.filter-tab.active{background:var(--accent-bg);color:var(--accent);font-weight:600}
+.task-list{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:8px 12px 80px}
+.task-card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);padding:14px 16px;margin-bottom:10px;cursor:pointer;transition:border-color .2s;position:relative}
+.task-card:active{background:var(--bg-tertiary)}
+.task-card .task-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.task-card .task-input{font-size:14px;color:var(--text-primary);line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:6px;word-break:break-all}
+.task-card .task-summary{font-size:12px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.task-card .task-time{font-size:11px;color:var(--text-muted)}
+
+/* Status badges */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:600}
+.badge.queued{background:var(--info-bg);color:var(--info)}
+.badge.running{background:var(--accent-bg);color:var(--accent)}
+.badge.running .pulse{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 1.2s ease-in-out infinite}
+.badge.completed{background:var(--success-bg);color:var(--success)}
+.badge.failed{background:var(--danger-bg);color:var(--danger)}
+.badge.awaiting_input{background:var(--purple-bg);color:var(--purple)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;color:var(--text-muted);font-size:14px;gap:8px}
+.empty-state .empty-icon{font-size:40px;opacity:.4}
+
+/* ========== TASK DETAIL PAGE ========== */
+#page-detail{display:flex;flex-direction:column}
+.detail-header{flex-shrink:0;padding:16px;padding-top:calc(12px + env(safe-area-inset-top,0));background:var(--bg-secondary);border-bottom:1px solid var(--border-color)}
+.detail-header .status-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.detail-header .meta-row{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--text-secondary)}
+.detail-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom,0))}
+
+.detail-section{background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px}
+.detail-section .section-title{font-size:13px;font-weight:600;color:var(--text-secondary);margin-bottom:8px}
+.detail-section .section-content{font-size:14px;line-height:1.5;color:var(--text-primary);word-break:break-word;white-space:pre-wrap}
+
+/* Stream content */
+.stream-content{font-size:13px;line-height:1.5;color:var(--text-primary);max-height:300px;overflow-y:auto}
+.stream-content .token-chunk{animation:fade-in .15s ease}
+.stream-content .reasoning-text{color:var(--text-muted);font-style:italic}
+.stream-content .tool-call{margin:4px 0;padding:6px 10px;background:var(--bg-tertiary);border-radius:6px;font-size:12px;color:var(--info)}
+.stream-content .tool-call .tool-name{color:var(--accent);font-weight:600}
+.stream-content .tool-result{font-size:11px;color:var(--text-secondary);margin-top:2px}
+.stream-content .turn-label{margin:8px 0 4px;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
+.done-text{font-size:14px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
+@keyframes fade-in{from{opacity:0}to{opacity:1}}
+
+/* Connect status */
+.connect-status{display:flex;align-items:center;gap:6px;font-size:11px;padding:4px 0;margin-bottom:8px}
+.connect-status .dot{width:6px;height:6px;border-radius:50%}
+.connect-status .dot.connected{background:var(--success)}
+.connect-status .dot.connecting{background:var(--info);animation:pulse 1s ease-in-out infinite}
+.connect-status .dot.disconnected{background:var(--danger)}
+
+/* Approval / Input section */
+.input-section{background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);padding:16px;margin-bottom:12px}
+.input-section .question{font-size:14px;color:var(--text-primary);padding:10px 14px;background:var(--bg-tertiary);border-radius:var(--radius-sm);margin-bottom:12px;border-left:3px solid var(--accent)}
+.input-section textarea{width:100%;min-height:80px;padding:12px;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:var(--radius-sm);color:var(--text-primary);font-size:14px;resize:none;transition:border-color .2s}
+.input-section textarea:focus{border-color:var(--accent)}
+.input-section .input-actions{display:flex;gap:8px;margin-top:10px}
+.input-section .input-actions button{flex:1;height:40px;border-radius:var(--radius-sm);font-size:14px;font-weight:600;cursor:pointer;transition:opacity .2s}
+.input-section .input-actions button:active{opacity:.8}
+.input-section .input-actions .btn-submit{background:var(--accent);color:#000}
+.input-section .input-actions .btn-submit:disabled{opacity:.5;cursor:not-allowed}
+.input-section .input-actions .btn-cancel{background:var(--bg-tertiary);color:var(--text-secondary)}
+
+/* Review section */
+.review-section{background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);padding:16px;margin-bottom:12px}
+.review-section .review-actions{display:flex;gap:8px;margin-top:10px}
+.review-section .review-actions button{flex:1;height:40px;border-radius:var(--radius-sm);font-size:13px;font-weight:600;cursor:pointer;transition:opacity .2s}
+.review-section .review-actions button:active{opacity:.8}
+.review-section .review-actions .btn-accept{background:var(--success);color:#000}
+.review-section .review-actions .btn-fix{background:var(--accent);color:#000}
+.review-section .review-actions .btn-ignore{background:var(--bg-tertiary);color:var(--text-secondary)}
+
+/* Action bar */
+.detail-actions{display:flex;gap:8px;margin-top:8px}
+.detail-actions button{flex:1;height:40px;border-radius:var(--radius-sm);font-size:14px;font-weight:600;cursor:pointer;transition:opacity .2s}
+.detail-actions button:active{opacity:.8}
+.detail-actions .btn-cancel-task{background:var(--danger-bg);color:var(--danger);border:1px solid var(--danger)}
+.detail-actions .btn-refresh{background:var(--bg-tertiary);color:var(--text-secondary)}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- Header -->
+  <div id="page-header">
+    <button class="back-btn" id="backBtn" onclick="router.goBack()">&#x2190;</button>
+    <span class="page-title" id="pageTitle">玄码</span>
+    <button class="header-action" id="headerAction" onclick="void 0">登出</button>
+  </div>
+
+  <!-- Page: Login -->
+  <div class="page" id="page-login">
+    <div class="login-brand">
+      <h1>玄码</h1>
+      <p>请在服务端登录</p>
+    </div>
+    <form class="login-form" onsubmit="return auth.login(event)">
+      <div class="field">
+        <label>用户名</label>
+        <input type="text" id="loginUsername" placeholder="输入用户名" autocomplete="username" autocapitalize="off" required>
+      </div>
+      <div class="field">
+        <label>密码</label>
+        <input type="password" id="loginPassword" placeholder="输入密码" autocomplete="current-password" required>
+      </div>
+      <div class="login-error" id="loginError"></div>
+      <button type="submit" class="login-btn" id="loginBtn">登 录</button>
+    </form>
+  </div>
+
+  <!-- Page: Task List -->
+  <div class="page" id="page-tasks">
+    <div class="filter-tabs" id="filterTabs"></div>
+    <div class="refresh-indicator" id="refreshIndicator">
+      <span class="spinner"></span> 刷新中...
+    </div>
+    <div class="task-list" id="taskList"></div>
+  </div>
+
+  <!-- Page: Task Detail -->
+  <div class="page" id="page-detail">
+    <div class="detail-header" id="detailHeader"></div>
+    <div class="detail-body" id="detailBody"></div>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toast-container"></div>
+</div>
+
+<script>
+// ============================================================
+// UI Utilities
+// ============================================================
+const ui = {
+  $(id) { return document.getElementById(id) },
+  showToast(msg, type = 'info', duration = 2500) {
+    const container = this.$('toast-container');
+    const el = document.createElement('div');
+    el.className = 'toast ' + type;
+    el.textContent = msg;
+    container.appendChild(el);
+    setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 200) }, duration);
+  },
+  formatTime(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    const now = new Date();
+    const diff = (now - d) / 1000;
+    if (diff < 60) return '刚刚';
+    if (diff < 3600) return Math.floor(diff / 60) + '分钟前';
+    if (diff < 86400) return Math.floor(diff / 3600) + '小时前';
+    if (diff < 2592000) return Math.floor(diff / 86400) + '天前';
+    return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+  },
+  formatDuration(ms) {
+    if (!ms) return '';
+    if (ms < 1000) return ms + 'ms';
+    if (ms < 60000) return (ms / 1000).toFixed(1) + 's';
+    const m = Math.floor(ms / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    return m + '分' + s + '秒';
+  },
+  statusBadge(status) {
+    const labels = { queued: '排队中', running: '运行中', completed: '已完成', failed: '失败', awaiting_input: '待审批' };
+    const dot = status === 'running' ? '<span class="pulse"></span>' : '';
+    return '<span class="badge ' + status + '">' + dot + (labels[status] || status) + '</span>';
+  },
+  truncate(str, len = 60) {
+    if (!str) return '';
+    return str.length > len ? str.substring(0, len) + '...' : str;
+  },
+  escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+};
+
+// ============================================================
+// API Client
+// ============================================================
+const api = {
+  _token: localStorage.getItem('mobile_token') || '',
+
+  getToken() { return this._token },
+  setToken(t) { this._token = t; if (t) localStorage.setItem('mobile_token', t); else localStorage.removeItem('mobile_token') },
+
+  async request(path, opts = {}) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (this._token) headers['Authorization'] = 'Bearer ' + this._token;
+    const res = await fetch(path, { ...opts, headers });
+    if (!res.ok) {
+      let msg = res.statusText;
+      try { const err = await res.json(); msg = err.error || msg } catch (e) {}
+      if (res.status === 401 && router.currentPage !== '#/login') {
+        this.setToken('');
+        router.go('#/login');
+        ui.showToast('登录已过期，请重新登录', 'error');
+      }
+      throw new Error(msg);
+    }
+    const ct = res.headers.get('content-type') || '';
+    if (ct.includes('application/json') || ct.includes('text/event-stream')) return res.json();
+    return res;
+  },
+
+  login(username, password) {
+    return this.request('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) });
+  },
+  listTasks(limit = 50) {
+    return this.request('/tasks?limit=' + limit);
+  },
+  getTask(id) {
+    return this.request('/tasks/' + encodeURIComponent(id));
+  },
+  answerTask(id, answer) {
+    return this.request('/tasks/' + encodeURIComponent(id) + '/input', { method: 'POST', body: JSON.stringify({ answer }) });
+  },
+  approveReview(id, action) {
+    return this.request('/tasks/' + encodeURIComponent(id) + '/approve-review', { method: 'POST', body: JSON.stringify({ action }) });
+  },
+  cancelTask(id) {
+    return this.request('/tasks/' + encodeURIComponent(id) + '/cancel', { method: 'POST' });
+  },
+  getTaskHistory(id) {
+    return this.request('/tasks/' + encodeURIComponent(id) + '/history');
+  }
+};
+
+// ============================================================
+// Auth Module
+// ============================================================
+const auth = {
+  async login(e) {
+    e.preventDefault();
+    const username = ui.$('loginUsername').value.trim();
+    const password = ui.$('loginPassword').value;
+    const btn = ui.$('loginBtn');
+    const errEl = ui.$('loginError');
+
+    if (!username || !password) { errEl.textContent = '请输入用户名和密码'; return false; }
+
+    btn.disabled = true;
+    btn.textContent = '登录中...';
+    errEl.textContent = '';
+
+    try {
+      const data = await api.login(username, password);
+      api.setToken(data.token);
+      if (data.user) localStorage.setItem('mobile_user', JSON.stringify(data.user));
+      ui.showToast('登录成功', 'success');
+      router.go('#/tasks');
+    } catch (err) {
+      errEl.textContent = err.message || '登录失败';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '登 录';
+    }
+    return false;
+  },
+
+  logout() {
+    api.setToken('');
+    localStorage.removeItem('mobile_user');
+    ui.showToast('已登出', 'info');
+    router.go('#/login');
+  },
+
+  isLoggedIn() { return !!api._token }
+};
+
+// ============================================================
+// SSE Stream Manager
+// ============================================================
+const sseManager = {
+  _current: null,
+
+  connect(taskId, callbacks) {
+    this.disconnect();
+    let retries = 0;
+    const maxRetries = 10;
+    const baseDelay = 1000;
+
+    const connect = () => {
+      const es = new EventSource('/tasks/' + encodeURIComponent(taskId) + '/stream');
+      let connected = false;
+
+      es.addEventListener('connected', () => {
+        connected = true;
+        retries = 0;
+        if (callbacks.onConnected) callbacks.onConnected();
+      });
+
+      es.addEventListener('turn', (e) => { try { callbacks.onTurn && callbacks.onTurn(JSON.parse(e.data)) } catch (ex) {} });
+      es.addEventListener('token', (e) => { try { callbacks.onToken && callbacks.onToken(JSON.parse(e.data)) } catch (ex) {} });
+      es.addEventListener('tool_call', (e) => { try { callbacks.onToolCall && callbacks.onToolCall(JSON.parse(e.data)) } catch (ex) {} });
+      es.addEventListener('reasoning', (e) => { try { callbacks.onReasoning && callbacks.onReasoning(JSON.parse(e.data)) } catch (ex) {} });
+      es.addEventListener('error', (e) => { try { callbacks.onError && callbacks.onError(JSON.parse(e.data)) } catch (ex) {} });
+      es.addEventListener('complete', (e) => {
+        try { callbacks.onComplete && callbacks.onComplete(JSON.parse(e.data)) } catch (ex) {}
+        es.close();
+      });
+      es.addEventListener('error_fatal', (e) => {
+        try { callbacks.onFatalError && callbacks.onFatalError(JSON.parse(e.data)) } catch (ex) {}
+        es.close();
+      });
+      es.addEventListener('input_received', (e) => { try { callbacks.onInputReceived && callbacks.onInputReceived(JSON.parse(e.data)) } catch (ex) {} });
+      es.addEventListener('review_decision', (e) => { try { callbacks.onReviewDecision && callbacks.onReviewDecision(JSON.parse(e.data)) } catch (ex) {} });
+
+      es.onerror = () => {
+        es.close();
+        if (!connected && retries < maxRetries) {
+          retries++;
+          const delay = Math.min(baseDelay * Math.pow(1.5, retries - 1), 30000);
+          if (callbacks.onReconnecting) callbacks.onReconnecting(retries, delay);
+          setTimeout(connect, delay);
+        } else if (connected && callbacks.onDisconnected) {
+          callbacks.onDisconnected();
+        }
+      };
+
+      this._current = { es, taskId, callbacks };
+    };
+
+    connect();
+  },
+
+  disconnect() {
+    if (this._current) {
+      this._current.es.close();
+      this._current = null;
+    }
+  }
+};
+
+// ============================================================
+// Router
+// ============================================================
+const router = {
+  currentPage: '',
+  currentParams: {},
+
+  init() {
+    window.addEventListener('hashchange', () => this._handle());
+    if (!location.hash || location.hash === '#') location.hash = api._token ? '#/tasks' : '#/login';
+    this._handle();
+  },
+
+  go(hash) {
+    location.hash = hash;
+  },
+
+  goBack() {
+    window.history.back();
+    if (location.hash === '') this.go('#/tasks');
+  },
+
+  _handle() {
+    const hash = location.hash || '#/login';
+    const [base, ...rest] = hash.split('/');
+
+    if (base === '#/tasks' && rest[0]) {
+      // #/tasks/:id
+      this.currentPage = '#/tasks/:id';
+      this.currentParams = { id: rest[0] };
+      pages.renderDetail(rest[0]);
+    } else if (hash === '#/tasks') {
+      this.currentPage = '#/tasks';
+      this.currentParams = {};
+      pages.renderList();
+    } else if (hash === '#/login') {
+      this.currentPage = '#/login';
+      this.currentParams = {};
+      pages.renderLogin();
+    } else {
+      this.go('#/tasks');
+    }
+  }
+};
+
+// ============================================================
+// Page Renderers
+// ============================================================
+let listPollTimer = null;
+let currentTaskId = null;
+
+const pages = {
+  showPage(pageId, title, showBack = false, actionText = '') {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    const page = ui.$(pageId);
+    if (page) page.classList.add('active');
+    ui.$('pageTitle').textContent = title;
+    ui.$('backBtn').style.display = showBack ? 'flex' : 'none';
+    const action = ui.$('headerAction');
+    if (actionText) {
+      action.textContent = actionText;
+      action.style.display = 'block';
+      action.onclick = actionText === '登出' ? auth.logout : null;
+    } else {
+      action.style.display = 'none';
+    }
+    document.getElementById('page-content').scrollTop = 0;
+  },
+
+  renderLogin() {
+    this.showPage('page-login', '玄码移动端', false, '');
+    ui.$('loginUsername').focus();
+    ui.$('loginError').textContent = '';
+  },
+
+  async renderList() {
+    this.showPage('page-tasks', '任务列表', false, '登出');
+    const listEl = ui.$('taskList');
+    const filterEl = ui.$('filterTabs');
+    let currentFilter = 'all';
+    let allTasks = [];
+
+    const filters = [
+      { key: 'all', label: '全部' },
+      { key: 'running', label: '运行中' },
+      { key: 'awaiting_input', label: '待审批' },
+      { key: 'completed', label: '已完成' },
+      { key: 'failed', label: '失败' },
+      { key: 'queued', label: '排队中' },
+    ];
+
+    function renderFilters() {
+      filterEl.innerHTML = filters.map(f =>
+        '<button class="filter-tab' + (f.key === currentFilter ? ' active' : '') + '" data-key="' + f.key + '">' + f.label + '</button>'
+      ).join('');
+      filterEl.querySelectorAll('.filter-tab').forEach(btn => {
+        btn.addEventListener('click', () => {
+          currentFilter = btn.dataset.key;
+          renderFilters();
+          renderTasks();
+        });
+      });
+    }
+
+    function renderTasks() {
+      const filtered = currentFilter === 'all' ? allTasks : allTasks.filter(t => t.status === currentFilter);
+      if (filtered.length === 0) {
+        listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">&#x1f4ad;</div>暂无任务</div>';
+        return;
+      }
+      listEl.innerHTML = filtered.map(t => {
+        const input = ui.truncate(t.userInput || '', 80);
+        const summary = t.progressSummary || t.result?.finalAnswer || '';
+        const summaryShort = ui.truncate(summary.replace(/\n/g, ' '), 80);
+        return '<div class="task-card" data-id="' + t.id + '">' +
+          '<div class="task-header">' +
+            ui.statusBadge(t.status) +
+            '<span class="task-time">' + ui.formatTime(t.createdAt) + '</span>' +
+          '</div>' +
+          '<div class="task-input">' + ui.escapeHtml(input) + '</div>' +
+          (summaryShort ? '<div class="task-summary">' + ui.escapeHtml(summaryShort) + '</div>' : '') +
+        '</div>';
+      }).join('');
+      listEl.querySelectorAll('.task-card').forEach(card => {
+        card.addEventListener('click', () => router.go('#/tasks/' + card.dataset.id));
+      });
+    }
+
+    async function loadTasks() {
+      try {
+        const data = await api.listTasks(50);
+        allTasks = Array.isArray(data) ? data : (data.tasks || []);
+        renderTasks();
+      } catch (err) {
+        if (router.currentPage === '#/tasks') {
+          listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">&#x26a0;</div>加载失败: ' + ui.escapeHtml(err.message) + '</div>';
+        }
+      }
+    }
+
+    // Pull-to-refresh via touch
+    let touchStartY = 0;
+    listEl.addEventListener('touchstart', (e) => { touchStartY = e.touches[0].clientY }, { passive: true });
+    listEl.addEventListener('touchmove', (e) => {
+      if (listEl.scrollTop > 0) return;
+      const diff = e.touches[0].clientY - touchStartY;
+      if (diff > 80) {
+        touchStartY = e.touches[0].clientY;
+        loadTasks();
+        ui.showToast('已刷新', 'success');
+      }
+    }, { passive: true });
+
+    // Scroll to top to show indicator
+    let lastScroll = 0;
+    listEl.addEventListener('scroll', () => {
+      if (listEl.scrollTop < -20 && Date.now() - lastScroll > 200) {
+        lastScroll = Date.now();
+        const ind = ui.$('refreshIndicator');
+        ind.classList.add('visible');
+        loadTasks().finally(() => setTimeout(() => ind.classList.remove('visible'), 500));
+      }
+    }, { passive: true });
+
+    renderFilters();
+    await loadTasks();
+
+    // Poll for updates
+    if (listPollTimer) clearInterval(listPollTimer);
+    listPollTimer = setInterval(() => {
+      if (router.currentPage === '#/tasks') loadTasks();
+    }, 5000);
+  },
+
+  async renderDetail(taskId) {
+    if (currentTaskId !== taskId) {
+      sseManager.disconnect();
+      currentTaskId = taskId;
+    }
+
+    this.showPage('page-detail', '任务详情', true, '');
+
+    const headerEl = ui.$('detailHeader');
+    const bodyEl = ui.$('detailBody');
+
+    // Initial loading
+    bodyEl.innerHTML = '<div class="loading-overlay"><span class="spinner spinner-lg"></span><span>加载中...</span></div>';
+
+    try {
+      const task = await api.getTask(taskId);
+      const isTerminal = task.status === 'completed' || task.status === 'failed';
+      // Re-check in case we navigated away
+      if (currentTaskId !== taskId) return;
+
+      // Render header
+      headerEl.innerHTML =
+        '<div class="status-row">' +
+          ui.statusBadge(task.status) +
+          '<span style="font-size:12px;color:var(--text-secondary)">' + ui.formatTime(task.createdAt) + '</span>' +
+        '</div>' +
+        '<div class="meta-row">' +
+          (task.result?.duration ? '<span>耗时: ' + ui.formatDuration(task.result.duration) + '</span>' : '') +
+          (task.result?.turnCount ? '<span>轮次: ' + task.result.turnCount + '</span>' : '') +
+          (task.result?.toolCallCount ? '<span>工具: ' + task.result.toolCallCount + '次</span>' : '') +
+          (task.result?.stopReason ? '<span>停止: ' + task.result.stopReason + '</span>' : '') +
+        '</div>' +
+        '<div class="connect-status" id="connectStatus">' +
+          '<span class="dot connecting"></span><span id="connectText">' + (isTerminal ? '任务已结束' : '连接中...') + '</span>' +
+        '</div>';
+
+      // Render body: user input section
+      bodyEl.innerHTML =
+        '<div class="detail-section">' +
+          '<div class="section-title">用户输入</div>' +
+          '<div class="section-content">' + ui.escapeHtml(task.userInput || '(无输入)') + '</div>' +
+        '</div>' +
+        '<div id="streamSection"><div class="detail-section"><div class="section-title">执行进度</div><div class="stream-content" id="streamContent"><div class="loading-overlay"><span class="spinner"></span><span>等待事件...</span></div></div></div></div>' +
+        '<div id="resultSection"></div>' +
+        '<div id="approvalSection"></div>' +
+        '<div id="reviewSection"></div>' +
+        '<div id="detailActions"></div>';
+
+      // Show result if already completed
+      if (task.result?.finalAnswer) {
+        const rsEl = ui.$('resultSection');
+        rsEl.innerHTML = '<div class="detail-section"><div class="section-title">执行结果</div><div class="section-content done-text">' + ui.escapeHtml(task.result.finalAnswer) + '</div></div>';
+        const scEl = ui.$('streamContent');
+        scEl.innerHTML = '<div class="done-text" style="color:var(--text-muted)">&#x2714; 任务已完成</div>';
+      }
+
+      if (task.error) {
+        const rsEl = ui.$('resultSection');
+        rsEl.innerHTML = '<div class="detail-section"><div class="section-title" style="color:var(--danger)">错误信息</div><div class="section-content" style="color:var(--danger)">' + ui.escapeHtml(task.error) + '</div></div>';
+      }
+
+      // Show approval section if awaiting_input
+      if (task.status === 'awaiting_input' || task.pendingQuestion) {
+        this._renderApproval(task);
+      }
+
+      // Show review section
+      if (task.reviewResult) {
+        this._renderReview(task);
+      }
+
+      // Actions
+      this._renderActions(task);
+
+      // Connect SSE for live updates
+      if (!isTerminal) {
+        this._connectSSE(taskId);
+      }
+    } catch (err) {
+      bodyEl.innerHTML = '<div class="empty-state"><div class="empty-icon">&#x26a0;</div>加载失败: ' + ui.escapeHtml(err.message) + '</div>';
+    }
+  },
+
+  _renderApproval(task) {
+    const el = ui.$('approvalSection');
+    el.innerHTML =
+      '<div class="input-section">' +
+        '<div class="section-title" style="color:var(--purple);margin-bottom:8px">&#x2b50; 需要您的确认</div>' +
+        '<div class="question">' + ui.escapeHtml(task.pendingQuestion || '无问题描述') + '</div>' +
+        '<textarea id="approvalInput" placeholder="输入回复..." rows="3"></textarea>' +
+        '<div class="input-actions">' +
+          '<button class="btn-cancel" onclick="pages._cancelApproval()">取消</button>' +
+          '<button class="btn-submit" id="approvalSubmitBtn" onclick="pages._submitApproval(\'' + task.id + '\')">提交</button>' +
+        '</div>' +
+      '</div>';
+  },
+
+  async _submitApproval(taskId) {
+    const input = ui.$('approvalInput');
+    const btn = ui.$('approvalSubmitBtn');
+    const answer = input.value.trim();
+    if (!answer) { ui.showToast('请输入回复', 'warning'); return; }
+    btn.disabled = true;
+    btn.textContent = '提交中...';
+    try {
+      await api.answerTask(taskId, answer);
+      ui.showToast('已提交', 'success');
+      // Refresh task to update status
+      setTimeout(() => { if (currentTaskId === taskId) pages.renderDetail(taskId) }, 1000);
+    } catch (err) {
+      ui.showToast('提交失败: ' + err.message, 'error');
+      btn.disabled = false;
+      btn.textContent = '提交';
+    }
+  },
+
+  _cancelApproval() {
+    ui.$('approvalSection').innerHTML = '';
+  },
+
+  _renderReview(task) {
+    const el = ui.$('reviewSection');
+    el.innerHTML =
+      '<div class="review-section">' +
+        '<div class="section-title">审查结果</div>' +
+        '<div class="section-content" style="font-size:13px;margin-bottom:8px">' + ui.escapeHtml(task.reviewResult) + '</div>' +
+        '<div class="review-actions">' +
+          '<button class="btn-accept" onclick="pages._submitReview(\'' + task.id + '\',\'accept\')">接受</button>' +
+          '<button class="btn-fix" onclick="pages._submitReview(\'' + task.id + '\',\'request_fix\')">请求修改</button>' +
+          '<button class="btn-ignore" onclick="pages._submitReview(\'' + task.id + '\',\'ignore\')">忽略</button>' +
+        '</div>' +
+      '</div>';
+  },
+
+  async _submitReview(taskId, action) {
+    try {
+      await api.approveReview(taskId, action);
+      ui.showToast('已' + (action === 'accept' ? '接受' : action === 'request_fix' ? '请求修改' : '忽略'), 'success');
+    } catch (err) {
+      ui.showToast('操作失败: ' + err.message, 'error');
+    }
+  },
+
+  _renderActions(task) {
+    const el = ui.$('detailActions');
+    if (task.status === 'running' || task.status === 'queued') {
+      el.innerHTML = '<div class="detail-actions"><button class="btn-cancel-task" onclick="pages._cancelTask(\'' + task.id + '\')">取消任务</button></div>';
+    } else {
+      el.innerHTML = '<div class="detail-actions"><button class="btn-refresh" onclick="pages.renderDetail(\'' + task.id + '\')">刷新</button></div>';
+    }
+  },
+
+  async _cancelTask(taskId) {
+    if (!confirm('确定要取消此任务吗？')) return;
+    try {
+      await api.cancelTask(taskId);
+      ui.showToast('任务已取消', 'success');
+      setTimeout(() => { if (currentTaskId === taskId) pages.renderDetail(taskId) }, 500);
+    } catch (err) {
+      ui.showToast('取消失败: ' + err.message, 'error');
+    }
+  },
+
+  _connectSSE(taskId) {
+    const streamEl = ui.$('streamContent');
+    const statusEl = ui.$('connectStatus');
+
+    function updateStatus(dotClass, text) {
+      const dot = statusEl?.querySelector('.dot');
+      const txt = statusEl?.querySelector('#connectText');
+      if (dot) { dot.className = 'dot ' + dotClass }
+      if (txt) txt.textContent = text;
+    }
+
+    updateStatus('connecting', '连接中...');
+
+    const initialContent = streamEl?.innerHTML || '';
+
+    sseManager.connect(taskId, {
+      onConnected() {
+        updateStatus('connected', '实时连接');
+      },
+      onTurn(data) {
+        const turn = data.turn || '';
+        if (streamEl) {
+          const label = document.createElement('div');
+          label.className = 'turn-label';
+          label.textContent = '--- 轮次 ' + turn + ' ---';
+          streamEl.appendChild(label);
+          streamEl.scrollTop = streamEl.scrollHeight;
+        }
+      },
+      onToken(data) {
+        if (!streamEl || !data.fullText) return;
+        // Check if there's a loading overlay
+        if (streamEl.children.length === 1 && streamEl.querySelector('.loading-overlay')) {
+          streamEl.innerHTML = '';
+        }
+        const chunk = document.createElement('span');
+        chunk.className = 'token-chunk';
+        chunk.textContent = data.fullText.slice(-200);
+        // Replace last token chunk with latest
+        const last = streamEl.lastElementChild;
+        if (last && last.classList.contains('token-chunk')) {
+          last.textContent = data.fullText.slice(-200);
+        } else {
+          streamEl.appendChild(chunk);
+        }
+        streamEl.scrollTop = streamEl.scrollHeight;
+      },
+      onToolCall(data) {
+        if (!streamEl) return;
+        if (streamEl.children.length === 1 && streamEl.querySelector('.loading-overlay')) {
+          streamEl.innerHTML = '';
+        }
+        const el = document.createElement('div');
+        el.className = 'tool-call';
+        el.innerHTML = '<span class="tool-name">&#x2699; ' + ui.escapeHtml(data.toolType || '工具') + '</span>'
+          + (data.params ? ' ' + ui.escapeHtml(JSON.stringify(data.params).slice(0, 100)) : '')
+          + (data.result?.error ? '<div class="tool-result" style="color:var(--danger)">&#x2716; ' + ui.escapeHtml(data.result.error) + '</div>' : '');
+        streamEl.appendChild(el);
+        streamEl.scrollTop = streamEl.scrollHeight;
+      },
+      onReasoning(data) {
+        if (!streamEl) return;
+        if (streamEl.children.length === 1 && streamEl.querySelector('.loading-overlay')) {
+          streamEl.innerHTML = '';
+        }
+        const el = document.createElement('div');
+        el.className = 'reasoning-text';
+        el.textContent = data.token || '';
+        streamEl.appendChild(el);
+        streamEl.scrollTop = streamEl.scrollHeight;
+      },
+      onComplete(data) {
+        updateStatus('connected', '任务完成');
+        // Show final result
+        const rsEl = ui.$('resultSection');
+        if (data.finalAnswer && rsEl) {
+          rsEl.innerHTML = '<div class="detail-section"><div class="section-title">执行结果</div><div class="section-content done-text">' + ui.escapeHtml(data.finalAnswer) + '</div></div>';
+        }
+        if (streamEl) {
+          streamEl.innerHTML = '<div class="done-text" style="color:var(--text-muted)">&#x2714; 任务已完成</div>';
+        }
+        // Reload task data for full state
+        setTimeout(() => { if (currentTaskId === taskId) pages.renderDetail(taskId) }, 2000);
+      },
+      onFatalError(data) {
+        updateStatus('disconnected', '任务失败');
+        const rsEl = ui.$('resultSection');
+        if (data.error && rsEl) {
+          rsEl.innerHTML = '<div class="detail-section"><div class="section-title" style="color:var(--danger)">任务失败</div><div class="section-content" style="color:var(--danger)">' + ui.escapeHtml(data.error) + '</div></div>';
+        }
+      },
+      onReconnecting(retries, delay) {
+        updateStatus('connecting', '重连中(' + retries + ')...');
+      },
+      onDisconnected() {
+        updateStatus('disconnected', '连接断开');
+      },
+      onInputReceived() {
+        updateStatus('connected', '已收到回复');
+        ui.$('approvalSection').innerHTML = '<div class="detail-section"><div style="color:var(--success)">&#x2714; 回复已提交，任务继续执行...</div></div>';
+      },
+      onReviewDecision(data) {
+        if (streamEl) {
+          const el = document.createElement('div');
+          el.className = 'tool-call';
+          el.innerHTML = '<span style="color:var(--accent)">&#x1f4cb; 审查决策: ' + (data.action === 'accept' ? '已接受' : data.action === 'request_fix' ? '请求修改' : '已忽略') + '</span>';
+          streamEl.appendChild(el);
+        }
+      }
+    });  },
+
+  cleanup() {
+    sseManager.disconnect();
+    if (listPollTimer) { clearInterval(listPollTimer); listPollTimer = null; }
+  }
+};
+
+// Expose for WebView bridge
+window.mobileApp = {
+  navigateTo(taskId) { router.go('#/tasks/' + taskId); },
+  navigateToLogin() { router.go('#/login'); },
+  getToken() { return api.getToken(); }
+};
+
+// Init
+document.addEventListener('DOMContentLoaded', () => router.init());
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => pages.cleanup());
+</script>
+</body>
+</html>

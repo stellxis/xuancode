@@ -1,0 +1,13 @@
+{
+	"name": "@xuancode/optimizer",
+	"version": "1.5.103",
+	"private": true,
+	"type": "module",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"dependencies": {
+		"@xuancode/telemetry": "workspace:*",
+		"@xuancode/session": "workspace:*",
+		"@xuancode/types": "workspace:*"
+	}
+}

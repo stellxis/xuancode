@@ -1,0 +1,16 @@
+{
+	"name": "@xuancode/indexer",
+	"version": "1.5.103",
+	"private": true,
+	"type": "module",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"dependencies": {
+		"@xuancode/session": "workspace:*",
+		"@xuancode/database": "workspace:*"
+	},
+	"devDependencies": {
+		"better-sqlite3": "^11.0.0",
+		"@types/better-sqlite3": "^7.6.0"
+	}
+}

@@ -1,0 +1,19 @@
+{
+	"name": "@xuancode/orchestrator",
+	"version": "1.5.103",
+	"private": true,
+	"type": "module",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"scripts": {
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@xuancode/types": "workspace:*",
+		"@xuancode/tools": "workspace:*",
+		"@xuancode/model-adapter": "workspace:*",
+		"@xuancode/context": "workspace:*",
+		"@xuancode/telemetry": "workspace:*"
+	},
+	"license": "Apache-2.0 OR Commercial"
+}

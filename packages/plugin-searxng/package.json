@@ -1,0 +1,14 @@
+{
+	"name": "@xuancode/plugin-searxng",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "SearXNG 自建搜索引擎插件 — 水 (Water) 分类",
+	"xuancodePlugin": true,
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"dependencies": {
+		"@xuancode/plugins": "workspace:*",
+		"@xuancode/types": "workspace:*"
+	}
+}
