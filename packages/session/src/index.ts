@@ -81,6 +81,7 @@ export class SessionStore {
 	private logPath: string;
 	private createdAt: string;
 	private maxLogSize: number;
+	private rotateCounter = 0;
 
 	constructor(
 		sessionDirOrOptions?: string | { sessionDir?: string; maxLogSize?: number },
@@ -119,7 +120,8 @@ export class SessionStore {
 		try {
 			const stat = await fs.stat(this.logPath);
 			if (stat.size > this.maxLogSize) {
-				const rotatedPath = `${this.logPath}.${Date.now()}.rotated`;
+				this.rotateCounter++;
+				const rotatedPath = `${this.logPath}.${this.rotateCounter}.rotated`;
 				await fs.rename(this.logPath, rotatedPath);
 			}
 		} catch {
