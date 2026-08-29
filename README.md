@@ -43,7 +43,42 @@
 telemetry / model-adapter / permission / orchestrator / code-intelligence /
 daemon-protocol / database / distiller / session / subagent。
 
-### 用 CLI 直接跑起来
+### 安装 CLI（推荐）
+
+```bash
+# 全局安装（需 Node.js 20+）
+npm install -g @xuancode/cli
+
+# 启动交互对话
+xuancode
+
+# 非交互模式：管道喂任务
+echo "帮我在当前目录写一个 print hello 的脚本" | xuancode
+
+# 多步骤实施计划
+xuancode plan "实现一个本地 todo 应用"
+
+# 查看所有选项
+xuancode --help
+```
+
+接入真实模型（默认使用 mock provider 演示）：
+
+```bash
+# DeepSeek
+export DEEPSEEK_API_KEY=你的_key
+
+# 或 通义千问
+export QWEN_API_KEY=你的_key
+
+# 指定供应商
+xuancode -p deepseek
+```
+
+> `@xuancode/cli` 为 **client-only** 形态：不内置 daemon，模型直连调用；`xuancode daemon`
+> 子命令在 npm 版下优雅降级（提示需配合 Desktop / Docker 的 daemon）。
+
+### 从源码构建（开发者）
 
 ```bash
 # 安装依赖 (pnpm 9+ / Node.js 20+)
@@ -52,10 +87,10 @@ pnpm install
 # 构建 CLI 单文件 bundle
 pnpm --filter @xuancode/cli build
 
-# 非交互模式：管道喂任务，立即执行
+# 非交互模式
 echo "帮我在当前目录写一个 print hello 的脚本" | node apps/cli/dist/index.js
 
-# 交互对话模式（终端里直接输入，进入 Ink TUI）
+# 交互对话模式
 node apps/cli/dist/index.js
 
 # 多步骤实施计划
@@ -85,7 +120,7 @@ node apps/cli/dist/index.js -p deepseek
 ### 核心引擎测试
 
 ```bash
-pnpm test    # vitest 464 用例
+pnpm test    # vitest 49 文件 555 用例
 pnpm build   # tsc --noEmit 类型检查
 pnpm lint    # biome 全量格式化 + lint
 ```
