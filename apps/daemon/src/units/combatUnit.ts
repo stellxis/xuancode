@@ -31,6 +31,7 @@ interface ExecuteTaskPayload {
 	historyMessages?: Message[];
 	sessionId?: string;
 	modelEntries?: ModelEntry[];
+	reasoningLevel?: "fast" | "medium" | "expert";
 	resume?: {
 		messages: Message[];
 		turnCount: number;
@@ -97,10 +98,11 @@ class CombatUnit extends UnitBase {
 			const abortController = new AbortController();
 			this.currentAbortController = abortController;
 
-			const timeoutSignal = AbortSignal.timeout(p.maxTaskDuration);
+			// 空闲超时：连续 p.maxTaskDuration 内无 token/工具/轮次活动才中止（非墙钟硬杀）
+			const idle = new IdleAbort(p.maxTaskDuration);
 			const combinedSignal =
-				(AbortSignal.any as any)?.([timeoutSignal, abortController.signal]) ||
-				timeoutSignal;
+				(AbortSignal.any as any)?.([idle.signal, abortController.signal]) ||
+				idle.signal;
 
 			let tracer: Tracer | null = null;
 			const collector = new SessionCollector();
@@ -183,11 +185,17 @@ class CombatUnit extends UnitBase {
 								? params.options.map(String)
 								: [];
 							const correlationId = randomUUID();
+							// 等用户回答期间挂起空闲计时（用户想多久都行）
+							idle.suspend();
 							return new Promise((resolve) => {
+								const done = (data: { success: true; data: string }) => {
+									idle.resume();
+									resolve(data);
+								};
 								const timeout = setTimeout(() => {
 									if (this.pendingAskUser.has(correlationId)) {
 										this.pendingAskUser.delete(correlationId);
-										resolve({
+										done({
 											success: true,
 											data: "(用户未在 5 分钟内回答，请按最合理分支继续)",
 										});
@@ -195,7 +203,7 @@ class CombatUnit extends UnitBase {
 								}, 300_000);
 								this.pendingAskUser.set(correlationId, (answer: string) => {
 									clearTimeout(timeout);
-									resolve({ success: true, data: `用户选择: ${answer}` });
+									done({ success: true, data: `用户选择: ${answer}` });
 								});
 								this.sendEvent("ask_user", {
 									correlationId,
@@ -239,7 +247,9 @@ class CombatUnit extends UnitBase {
 					abortSignal: combinedSignal,
 					tracer: tracer ?? undefined,
 					extraDefinitions: extraDefs,
+					reasoningLevel: p.reasoningLevel,
 					onTurn: (turn, state) => {
+						idle.activity();
 						const s = state as any;
 						const totalChars =
 							s.messages?.reduce?.(
@@ -267,9 +277,11 @@ class CombatUnit extends UnitBase {
 						summary: string;
 						toolCallCount: number;
 					}) => {
+						idle.activity();
 						this.sendEvent("progress", info);
 					},
 					onToolCall: (tc: any, tr: any) => {
+						idle.activity();
 						this.sendEvent("tool_call", {
 							toolType: tc.type,
 							params: {
@@ -288,10 +300,12 @@ class CombatUnit extends UnitBase {
 						collector.captureToolCall(0, tc, tr);
 					},
 					onError: (message: string, site: string) => {
+						idle.activity();
 						this.sendEvent("error", { message, site });
 						collector.captureError(0, message, site);
 					},
 					onToken: (_token: string, fullText: string) => {
+						idle.activity();
 						const openThink = fullText.lastIndexOf("<think>");
 						const closeThink = fullText.lastIndexOf("</think>");
 						const openTool = fullText.lastIndexOf("<tool_call>");
@@ -387,6 +401,7 @@ class CombatUnit extends UnitBase {
 					lastMessages: null,
 				} satisfies ExecuteTaskResponse;
 			} finally {
+				idle.dispose();
 				this.currentAbortController = null;
 			}
 		});
@@ -397,5 +412,66 @@ class CombatUnit extends UnitBase {
 }
 
 // ===== Self-instantiate =====
+
+/**
+ * 空闲超时（与 daemon 侧同语义）：墙钟硬杀会打断数小时的长任务，
+ * 只有「连续 idleMs 内无任何 token/工具/轮次活动」才判定超时。
+ * ask_user 等待用户回答期间挂起计时。
+ */
+class IdleAbort {
+	private controller = new AbortController();
+	private timer: ReturnType<typeof setTimeout> | null = null;
+	private waitCount = 0;
+
+	constructor(private idleMs: number) {
+		this.arm();
+	}
+
+	get signal(): AbortSignal {
+		return this.controller.signal;
+	}
+
+	/** 任一活动回调（onToken/onTurn/onToolCall/onProgress/onError）调用 */
+	activity(): void {
+		if (this.controller.signal.aborted) return;
+		this.arm();
+	}
+
+	suspend(): void {
+		this.waitCount++;
+		this.disarm();
+	}
+
+	resume(): void {
+		this.waitCount = Math.max(0, this.waitCount - 1);
+		if (this.waitCount === 0 && !this.controller.signal.aborted) this.arm();
+	}
+
+	dispose(): void {
+		this.disarm();
+	}
+
+	private arm(): void {
+		this.disarm();
+		this.timer = setTimeout(() => {
+			this.timer = null;
+			if (!this.controller.signal.aborted) {
+				this.controller.abort(
+					new Error(
+						`空闲超时：连续 ${Math.round(this.idleMs / 60_000)} 分钟无输出/工具活动`,
+					),
+				);
+			}
+		}, this.idleMs);
+		this.timer.unref?.();
+	}
+
+	private disarm(): void {
+		if (this.timer) {
+			clearTimeout(this.timer);
+			this.timer = null;
+		}
+	}
+}
 
 new CombatUnit();

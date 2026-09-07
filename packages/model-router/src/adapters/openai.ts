@@ -1,6 +1,6 @@
 import { parseSSEStream } from "@xuancode/model-adapter";
 import type { Message } from "@xuancode/types";
-import type { ApiToolDefinition } from "../types";
+import type { ApiToolDefinition, ReasoningLevel } from "../types";
 import { BaseAdapter } from "./base";
 
 interface Config {
@@ -33,8 +33,15 @@ export class OpenAIAdapter extends BaseAdapter {
 		messages: Message[],
 		systemPrompt?: string,
 		tools?: ApiToolDefinition[],
+		reasoningLevel?: ReasoningLevel,
 	): Promise<string> {
-		const body = this.buildBody(messages, systemPrompt, false, tools);
+		const body = this.buildBody(
+			messages,
+			systemPrompt,
+			false,
+			tools,
+			reasoningLevel,
+		);
 		const res = await fetch(`${this.config.baseUrl}/chat/completions`, {
 			method: "POST",
 			headers: this.headers(),
@@ -58,8 +65,15 @@ export class OpenAIAdapter extends BaseAdapter {
 		messages: Message[],
 		systemPrompt?: string,
 		tools?: ApiToolDefinition[],
+		reasoningLevel?: ReasoningLevel,
 	): AsyncGenerator<string, void, unknown> {
-		const body = this.buildBody(messages, systemPrompt, true, tools);
+		const body = this.buildBody(
+			messages,
+			systemPrompt,
+			true,
+			tools,
+			reasoningLevel,
+		);
 		const res = await fetch(`${this.config.baseUrl}/chat/completions`, {
 			method: "POST",
 			headers: this.headers(),
@@ -88,10 +102,18 @@ export class OpenAIAdapter extends BaseAdapter {
 		systemPrompt?: string,
 		stream?: boolean,
 		tools?: ApiToolDefinition[],
+		reasoningLevel?: ReasoningLevel,
 	) {
 		const msgs = [];
 		if (systemPrompt) msgs.push({ role: "system", content: systemPrompt });
 		msgs.push(...messages.map((m) => BaseAdapter.buildOpenAIMessage(m)));
+
+		// OpenAI: reasoning_effort 直接映射 fast/medium/expert → low/medium/high
+		const reasoningEffortMap: Record<string, string> = {
+			fast: "low",
+			medium: "medium",
+			expert: "high",
+		};
 
 		return {
 			model: this.model,
@@ -100,6 +122,9 @@ export class OpenAIAdapter extends BaseAdapter {
 			...(tools && tools.length > 0 ? { tools } : {}),
 			max_tokens: this.config.maxTokens,
 			temperature: this.config.temperature,
+			...(reasoningLevel
+				? { reasoning_effort: reasoningEffortMap[reasoningLevel] || "medium" }
+				: {}),
 		};
 	}
 }

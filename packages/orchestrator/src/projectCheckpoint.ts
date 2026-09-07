@@ -15,7 +15,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import type { Message } from "@xuancode/types";
+import type { Message, WorkflowPlan } from "@xuancode/types";
 
 export interface CheckpointVerifyState {
 	ran: boolean;
@@ -132,9 +132,12 @@ export function loadCheckpointContext(workDir: string): string {
 /** 断点续跑快照 — 每轮持久化，供 daemon 崩溃重启后续跑。按 resumeId（=taskId）区分，避免同 workDir 多任务互相覆盖。 */
 export interface ResumeState {
 	version: number;
+	/** 完整对话 transcript（由 stateManager 压缩约束大小，不再截断到 60 条） */
 	messages: Message[];
 	turnCount: number;
 	stopReason?: string;
+	/** 工作流计划快照（含各步骤状态 / currentStepId / context）— 续跑精确恢复，不重新分解 */
+	plan?: WorkflowPlan | null;
 	updatedAt: number;
 }
 
@@ -142,7 +145,14 @@ function resumeFilePath(workDir: string, resumeId: string): string {
 	return path.join(workDir, ".xuancode", `resume-${resumeId}.json`);
 }
 
-/** 写入断点快照（非致命，失败静默） */
+/** 原子写文件：先写 tmp 再 rename，避免崩溃留下半截 JSON（checkpoint/resume 双文件一致性依赖这一点） */
+function atomicWriteFileSync(filePath: string, content: string): void {
+	const tmp = `${filePath}.tmp`;
+	fs.writeFileSync(tmp, content);
+	fs.renameSync(tmp, filePath);
+}
+
+/** 写入断点快照（原子写，非致命，失败静默） */
 export function writeResumeState(
 	workDir: string,
 	resumeId: string,
@@ -151,7 +161,10 @@ export function writeResumeState(
 	try {
 		const dir = path.join(workDir, ".xuancode");
 		fs.mkdirSync(dir, { recursive: true });
-		fs.writeFileSync(resumeFilePath(workDir, resumeId), JSON.stringify(state));
+		atomicWriteFileSync(
+			resumeFilePath(workDir, resumeId),
+			JSON.stringify(state),
+		);
 	} catch {
 		/* resume 持久化失败不影响任务 */
 	}
@@ -351,7 +364,7 @@ export class ProjectCheckpoint {
 		try {
 			const dir = path.join(workDir, ".xuancode");
 			fs.mkdirSync(dir, { recursive: true });
-			fs.writeFileSync(
+			atomicWriteFileSync(
 				path.join(dir, "checkpoint.json"),
 				JSON.stringify(this.snapshot(), null, 2),
 			);

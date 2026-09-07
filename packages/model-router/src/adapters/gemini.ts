@@ -3,7 +3,7 @@ import type {
 	ModelStreamEvent,
 	NativeToolCall,
 } from "@xuancode/types";
-import type { ApiToolDefinition } from "../types";
+import type { ApiToolDefinition, ReasoningLevel } from "../types";
 import { BaseAdapter } from "./base";
 
 interface Config {
@@ -87,8 +87,9 @@ export class GeminiAdapter extends BaseAdapter {
 		messages: Message[],
 		systemPrompt?: string,
 		tools?: ApiToolDefinition[],
+		reasoningLevel?: ReasoningLevel,
 	): Promise<string> {
-		const body = this.buildBody(messages, systemPrompt, tools);
+		const body = this.buildBody(messages, systemPrompt, tools, reasoningLevel);
 		const url = `${this.config.baseUrl}/models/${this.model}:generateContent?key=${this.apiKey()}`;
 		const res = await fetch(url, {
 			method: "POST",
@@ -119,8 +120,9 @@ export class GeminiAdapter extends BaseAdapter {
 		messages: Message[],
 		systemPrompt?: string,
 		tools?: ApiToolDefinition[],
+		reasoningLevel?: ReasoningLevel,
 	): AsyncGenerator<ModelStreamEvent, void, unknown> {
-		const body = this.buildBody(messages, systemPrompt, tools);
+		const body = this.buildBody(messages, systemPrompt, tools, reasoningLevel);
 		const url = `${this.config.baseUrl}/models/${this.model}:streamGenerateContent?alt=sse&key=${this.apiKey()}`;
 		const res = await fetch(url, {
 			method: "POST",
@@ -230,6 +232,7 @@ export class GeminiAdapter extends BaseAdapter {
 		messages: Message[],
 		systemPrompt?: string,
 		tools?: ApiToolDefinition[],
+		reasoningLevel?: ReasoningLevel,
 	) {
 		const contents = messages.map((m) => BaseAdapter.buildGeminiMessage(m));
 		// ApiToolDefinition.function.parameters 已是 JSON-Schema 形状 → 直接作 functionDeclarations.parameters
@@ -241,6 +244,13 @@ export class GeminiAdapter extends BaseAdapter {
 				}))
 			: undefined;
 
+		// Gemini: thinkingConfig.thinkingBudget 映射 fast/medium/expert → 0/8192/32768
+		const thinkingBudgetMap: Record<string, number> = {
+			fast: 0,
+			medium: 8192,
+			expert: 32768,
+		};
+
 		return {
 			contents,
 			...(systemPrompt
@@ -250,6 +260,13 @@ export class GeminiAdapter extends BaseAdapter {
 			generationConfig: {
 				maxOutputTokens: this.config.maxTokens,
 				temperature: this.config.temperature,
+				...(reasoningLevel
+					? {
+							thinkingConfig: {
+								thinkingBudget: thinkingBudgetMap[reasoningLevel] ?? 8192,
+							},
+						}
+					: {}),
 			},
 		};
 	}

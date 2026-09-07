@@ -77,6 +77,26 @@ export class WorkflowPlanManager {
 		this.plan = null;
 	}
 
+	/**
+	 * 断点续跑：从快照原样恢复计划（含各步骤状态 / currentStepId / context），
+	 * 不重置任何状态；同时广播 plan_created（restored: true）让客户端立即渲染恢复后的计划。
+	 */
+	restorePlan(plan: WorkflowPlan): void {
+		const now = Date.now();
+		this.plan = {
+			...plan,
+			steps: plan.steps.map((s) => ({ ...s })),
+			context: { ...(plan.context || {}) },
+			updatedAt: now,
+		};
+		this.emit("plan_created", undefined, {
+			stepCount: this.plan.steps.length,
+			summary: this.plan.summary,
+			steps: this.plan.steps,
+			restored: true,
+		});
+	}
+
 	// ─── Step execution ───
 
 	startStep(stepId: string): boolean {

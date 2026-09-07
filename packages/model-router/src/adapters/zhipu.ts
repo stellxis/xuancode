@@ -1,6 +1,6 @@
 import { parseSSEStream } from "@xuancode/model-adapter";
 import type { Message } from "@xuancode/types";
-import type { ApiToolDefinition } from "../types";
+import type { ApiToolDefinition, ReasoningLevel } from "../types";
 import { BaseAdapter } from "./base";
 
 interface Config {
@@ -33,8 +33,15 @@ export class ZhipuAIAdapter extends BaseAdapter {
 		messages: Message[],
 		systemPrompt?: string,
 		tools?: ApiToolDefinition[],
+		reasoningLevel?: ReasoningLevel,
 	): Promise<string> {
-		const body = this.buildBody(messages, systemPrompt, false, tools);
+		const body = this.buildBody(
+			messages,
+			systemPrompt,
+			false,
+			tools,
+			reasoningLevel,
+		);
 		const res = await fetch(`${this.config.baseUrl}/chat/completions`, {
 			method: "POST",
 			headers: this.headers(),
@@ -58,8 +65,15 @@ export class ZhipuAIAdapter extends BaseAdapter {
 		messages: Message[],
 		systemPrompt?: string,
 		tools?: ApiToolDefinition[],
+		reasoningLevel?: ReasoningLevel,
 	): AsyncGenerator<string, void, unknown> {
-		const body = this.buildBody(messages, systemPrompt, true, tools);
+		const body = this.buildBody(
+			messages,
+			systemPrompt,
+			true,
+			tools,
+			reasoningLevel,
+		);
 		const res = await fetch(`${this.config.baseUrl}/chat/completions`, {
 			method: "POST",
 			headers: this.headers(),
@@ -88,10 +102,15 @@ export class ZhipuAIAdapter extends BaseAdapter {
 		systemPrompt?: string,
 		stream?: boolean,
 		tools?: ApiToolDefinition[],
+		reasoningLevel?: ReasoningLevel,
 	) {
 		const msgs: Record<string, any>[] = [];
 		if (systemPrompt) msgs.push({ role: "system", content: systemPrompt });
 		msgs.push(...messages.map((m) => BaseAdapter.buildOpenAIMessage(m)));
+
+		// 智谱: enable_thinking 映射 fast → false, medium/expert → true
+		const enableThinking =
+			reasoningLevel === "fast" ? false : reasoningLevel ? true : undefined;
 
 		return {
 			model: this.model,
@@ -100,6 +119,9 @@ export class ZhipuAIAdapter extends BaseAdapter {
 			...(tools && tools.length > 0 ? { tools } : {}),
 			max_tokens: this.config.maxTokens,
 			temperature: this.config.temperature,
+			...(enableThinking !== undefined
+				? { enable_thinking: enableThinking }
+				: {}),
 		};
 	}
 }

@@ -11,10 +11,10 @@
 	"keywords": ["xuancode", "ai", "agent", "cli", "coding", "assistant"],
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/xuancode-lab/xuancode.git"
+		"url": "https://github.com/stellxis/xuancode.git"
 	},
 	"homepage": "https://xuancode.club",
-	"author": "xuancode-lab",
+	"author": "stellxis",
 	"engines": {
 		"node": ">=20.0.0"
 	},

@@ -48,7 +48,7 @@ async function main(): Promise<void> {
 		`  速率限制:  ${rateLimitRPM > 0 ? `${rateLimitRPM} req/min` : "不限制"}`,
 	);
 	console.error(
-		`  任务超时:  ${(maxTaskDuration / 1000 / 60).toFixed(0)} 分钟`,
+		`  任务空闲超时: ${Math.round(maxTaskDuration / 1000 / 60)} 分钟（无输出/工具活动才计时，长任务可跑数小时）`,
 	);
 	console.error("========================================\n");
 

@@ -10,6 +10,7 @@ import type {
 	CostRecord,
 	ProviderAdapter,
 	ProviderCapability,
+	ReasoningLevel,
 	SelectionResult,
 	TaskProfile,
 } from "./types";
@@ -34,6 +35,7 @@ export class ModelRouter implements ModelAdapter {
 	private mode: "auto" | "fixed" | "legacy" = "auto";
 	private resolvedProvider = "";
 	private resolvedModel = "";
+	private _reasoningLevel: ReasoningLevel | undefined;
 
 	/** Provider name reported for ModelAdapter interface */
 	get provider(): string {
@@ -136,6 +138,11 @@ export class ModelRouter implements ModelAdapter {
 		return this.mode;
 	}
 
+	/** Set reasoning level for upcoming API calls */
+	setReasoningLevel(level: ReasoningLevel | undefined): void {
+		this._reasoningLevel = level;
+	}
+
 	/**
 	 * Select a model based on task profile.
 	 * In auto mode, calls ModelSelector.
@@ -164,7 +171,12 @@ export class ModelRouter implements ModelAdapter {
 		const start = Date.now();
 
 		try {
-			const result = await adapter.chat(messages, prompt, tools);
+			const result = await adapter.chat(
+				messages,
+				prompt,
+				tools,
+				this._reasoningLevel,
+			);
 			this.recordCost(adapter, messages, result, Date.now() - start);
 			return result;
 		} catch (err) {
@@ -187,7 +199,12 @@ export class ModelRouter implements ModelAdapter {
 		let fullText = "";
 
 		try {
-			for await (const token of adapter.chatStream(messages, prompt, tools)) {
+			for await (const token of adapter.chatStream(
+				messages,
+				prompt,
+				tools,
+				this._reasoningLevel,
+			)) {
 				// 富结构事件：结构化工具调用直接透传，仅文本增量计入 token 统计
 				if (typeof token === "string") fullText += token;
 				yield token;

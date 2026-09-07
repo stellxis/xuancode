@@ -3,7 +3,7 @@ import type {
 	ModelStreamEvent,
 	NativeToolCall,
 } from "@xuancode/types";
-import type { ApiToolDefinition } from "../types";
+import type { ApiToolDefinition, ReasoningLevel } from "../types";
 import { BaseAdapter } from "./base";
 
 interface Config {
@@ -61,8 +61,15 @@ export class AnthropicAdapter extends BaseAdapter {
 		messages: Message[],
 		systemPrompt?: string,
 		tools?: ApiToolDefinition[],
+		reasoningLevel?: ReasoningLevel,
 	): Promise<string> {
-		const body = this.buildBody(messages, systemPrompt, false, tools);
+		const body = this.buildBody(
+			messages,
+			systemPrompt,
+			false,
+			tools,
+			reasoningLevel,
+		);
 		const res = await fetch(`${this.config.baseUrl}/messages`, {
 			method: "POST",
 			headers: this.headers(),
@@ -95,8 +102,15 @@ export class AnthropicAdapter extends BaseAdapter {
 		messages: Message[],
 		systemPrompt?: string,
 		tools?: ApiToolDefinition[],
+		reasoningLevel?: ReasoningLevel,
 	): AsyncGenerator<ModelStreamEvent, void, unknown> {
-		const body = this.buildBody(messages, systemPrompt, true, tools);
+		const body = this.buildBody(
+			messages,
+			systemPrompt,
+			true,
+			tools,
+			reasoningLevel,
+		);
 		const res = await fetch(`${this.config.baseUrl}/messages`, {
 			method: "POST",
 			headers: this.headers(),
@@ -212,6 +226,7 @@ export class AnthropicAdapter extends BaseAdapter {
 		systemPrompt?: string,
 		stream?: boolean,
 		tools?: ApiToolDefinition[],
+		reasoningLevel?: ReasoningLevel,
 	) {
 		// Anthropic messages API expects system as top-level, not in messages array
 		const msgs = messages.map((m) => BaseAdapter.buildAnthropicMessage(m));
@@ -224,6 +239,13 @@ export class AnthropicAdapter extends BaseAdapter {
 				}))
 			: undefined;
 
+		// Anthropic: thinking.budget_tokens 映射 fast/medium/expert → 0/8192/32768
+		const thinkingBudgetMap: Record<string, number> = {
+			fast: 0,
+			medium: 8192,
+			expert: 32768,
+		};
+
 		return {
 			model: this.model,
 			messages: msgs,
@@ -232,6 +254,14 @@ export class AnthropicAdapter extends BaseAdapter {
 			max_tokens: this.config.maxTokens,
 			temperature: this.config.temperature,
 			stream,
+			...(reasoningLevel
+				? {
+						thinking: {
+							type: "enabled",
+							budget_tokens: thinkingBudgetMap[reasoningLevel] ?? 8192,
+						},
+					}
+				: {}),
 		};
 	}
 }

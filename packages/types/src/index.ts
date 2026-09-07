@@ -161,6 +161,8 @@ export enum StopReason {
 	DAG_COMPLETE = "dag_complete",
 	WORKFLOW_COMPLETE = "workflow_complete",
 	LOOP_DETECTED = "loop_detected",
+	/** 验证 gate / 目标闭环重试到顶仍未通过 → 显式失败（绝不静默放行伪装成功） */
+	VERIFY_FAILED = "verify_failed",
 }
 
 export interface ToolCall {

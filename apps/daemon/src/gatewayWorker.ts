@@ -21,6 +21,7 @@ interface LlmJobData {
 	systemPrompt?: string;
 	tools?: any[];
 	stream: boolean;
+	reasoningLevel?: "fast" | "medium" | "expert";
 }
 
 interface ProviderKeyCache {
@@ -58,7 +59,15 @@ export function createGatewayWorker(
 	const worker = new Worker<LlmJobData>(
 		"llm-requests",
 		async (job) => {
-			const { model, messages, systemPrompt, tools, stream, userId } = job.data;
+			const {
+				model,
+				messages,
+				systemPrompt,
+				tools,
+				stream,
+				userId,
+				reasoningLevel,
+			} = job.data;
 
 			console.error(
 				`[GatewayWorker] processing job ${job.id} (model=${model}, stream=${stream}, userId=${userId})`,
@@ -95,6 +104,7 @@ export function createGatewayWorker(
 
 			try {
 				modelRouter.setProvider(provider, model);
+				if (reasoningLevel) modelRouter.setReasoningLevel(reasoningLevel);
 
 				if (stream) {
 					const channel = `job:${job.id}:stream`;

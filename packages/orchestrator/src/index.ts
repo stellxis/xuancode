@@ -9,6 +9,7 @@ export {
 	stripThinkContent,
 	stripToolCalls,
 	hasToolCall,
+	stripNativeToolJson,
 } from "./toolParser";
 export {
 	checkStopConditions,

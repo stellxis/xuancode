@@ -41,6 +41,7 @@ import {
 	recommendMode,
 	runTaorLoop,
 	shouldUseDagScheduling,
+	stripNativeToolJson,
 	stripThinkContent,
 	stripToolCalls,
 	validateDag,
@@ -219,6 +220,8 @@ interface DaemonTask {
 export class DaemonScheduler {
 	private tasks: Map<string, DaemonTask> = new Map();
 	private abortControllers: Map<string, AbortController> = new Map();
+	/** 每个运行中任务的空闲超时控制器（活动重置 + 用户等待挂起），任务结束 dispose */
+	private idleTimeouts: Map<string, IdleAbortController> = new Map();
 	private running = false;
 	private timer: ReturnType<typeof setInterval> | null = null;
 	private sessionManager: SessionManager;
@@ -527,8 +530,14 @@ export class DaemonScheduler {
 					maxTaskDuration: this.maxTaskDuration,
 					sessionId: task.sessionId,
 					modelEntries: getModels(),
+					reasoningLevel:
+						(process.env.REASONING_LEVEL as "fast" | "medium" | "expert") ||
+						undefined,
 				},
-				this.maxTaskDuration + 30000,
+				// 空闲感知超时：worker 持续吐事件（token/turn/tool_call）即重置计时；
+				// 下限 10 分钟兜底 worker 假死（无任何事件）的情况
+				Math.max(this.maxTaskDuration, 600_000) + 30_000,
+				{ resetOnEvent: true },
 			);
 
 			// Import trace from worker into daemon's tracer for optimizer analysis
@@ -590,6 +599,8 @@ export class DaemonScheduler {
 
 		// 提前声明（若在 try 内声明，提前抛错时 finally 引用会触发 TDZ ReferenceError，掩盖原始错误）
 		const unspan: (() => void)[] = [];
+		// 空闲超时活动订阅解除函数（try 内赋值，finally 中解除）
+		let unsubIdleActivity: () => void = () => {};
 
 		try {
 			// 创建会话日志
@@ -610,14 +621,27 @@ export class DaemonScheduler {
 			});
 
 			// 使用真实 TAOR 循环
-			// 创建可取消的 abortSignal (任务超时)
-			const timeoutSignal = AbortSignal.timeout(this.maxTaskDuration);
+			// 空闲超时（非墙钟硬杀）：连续 maxTaskDuration 内无任何输出/工具活动才中止；
+			// token/turn/tool_call 等任意 SSE 事件都会重置计时，长任务可以跑数小时。
+			const idleTimeout = new IdleAbortController(this.maxTaskDuration, () => {
+				const msg = `任务空闲超时：连续 ${Math.round(this.maxTaskDuration / 60_000)} 分钟无输出/工具活动，已中止（可从检查点续跑）`;
+				console.error(`[daemon] ${msg}`);
+				taskEventBus.publish(task.id, "error", {
+					message: msg,
+					site: "idle_timeout",
+				});
+			});
+			this.idleTimeouts.set(task.id, idleTimeout);
+			// 活动源：该任务的任意事件总线事件都视为活动（token/turn/tool_call/progress/verify/workflow…）
+			unsubIdleActivity = taskEventBus.subscribe(task.id, () =>
+				idleTimeout.activity(),
+			);
 			const abortController = new AbortController();
 			this.abortControllers.set(task.id, abortController);
 			// 任一个触发即中止
 			const combinedSignal =
-				AbortSignal.any?.([timeoutSignal, abortController.signal]) ||
-				timeoutSignal;
+				AbortSignal.any?.([idleTimeout.signal, abortController.signal]) ||
+				idleTimeout.signal;
 
 			// 会话数据收集器（SQLite 持久化用）
 			const collectorRef: { current: SessionCollector | null } = {
@@ -759,10 +783,13 @@ export class DaemonScheduler {
 					// 任务结束/取消/失败由 resolvePendingInputs 统一 resolve 解除阻塞、防悬挂。
 					// V2 竞态修复：先注册 resolver 再 publish，确保订阅者收到 SSE 时一定能在 Map 里命中
 					return new Promise((resolve) => {
+						// 等用户回答期间挂起空闲计时（用户想多久都行）
+						this.idleTimeouts.get(task.id)?.suspend();
 						this.pendingInputRequests.set(task.id, {
 							source: "inline",
 							resolve: (message: string) => {
 								this.pendingInputRequests.delete(task.id);
+								this.idleTimeouts.get(task.id)?.resume();
 								task.status = "running";
 								task.awaitingSince = undefined;
 								task.pendingQuestion = undefined;
@@ -1060,7 +1087,50 @@ export class DaemonScheduler {
 				shouldUseDagScheduling(dagInput, modePreset);
 			const enableWorkflow = (task.config as any)?.enableWorkflow === true;
 
-			if (shouldDag || enableWorkflow) {
+			// 工作流事件桥接（SSE）：restore / seed 两条路径共用
+			const createWorkflowManager = async (): Promise<any> => {
+				const { WorkflowPlanManager } = await import("@xuancode/orchestrator");
+				return new WorkflowPlanManager({
+					onEvent: (event: WorkflowEvent) => {
+						taskEventBus.publish(task.id, "workflow", {
+							type: event.type,
+							planId: event.planId,
+							stepId: event.stepId,
+							timestamp: event.timestamp,
+							data: event.data,
+						});
+						if (event.type === "step_completed") {
+							taskEventBus.publish(task.id, "token", {
+								token: "",
+								fullText: `\n\n✅ 步骤完成: ${event.data?.label || event.stepId}\n`,
+							});
+						} else if (event.type === "step_failed") {
+							taskEventBus.publish(task.id, "error", {
+								message: `步骤失败 [${event.stepId}]: ${event.data?.error}`,
+								site: "workflow",
+							});
+						} else if (event.type === "plan_completed") {
+							taskEventBus.publish(task.id, "token", {
+								token: "",
+								fullText: "\n\n🎯 工作流计划已完成!\n",
+							});
+						}
+					},
+				});
+			};
+
+			// B3 续跑 + 工作流：resume 快照带完整计划 → 原样恢复（步骤状态/currentStepId/context），不重新分解
+			if (enableWorkflow && resumeState?.plan) {
+				const wfManager = await createWorkflowManager();
+				wfManager.restorePlan(resumeState.plan);
+				workflowManagerForInline = wfManager;
+				taskEventBus.publish(task.id, "turn", {
+					turn: 0,
+					contextUsage: 0,
+					dagStatus: "workflow_restored",
+					message: `已从断点恢复工作流计划: ${wfManager.getProgress().completed}/${wfManager.getProgress().total} 步已完成，继续执行`,
+				});
+			} else if (shouldDag || enableWorkflow) {
 				try {
 					taskEventBus.publish(task.id, "turn", {
 						turn: 0,
@@ -1101,36 +1171,8 @@ export class DaemonScheduler {
 
 						// 2.5 动态工作流路径：将 DAG 播种到 WorkflowPlan，通过 TAOR 循环动态执行
 						if (enableWorkflow) {
-							const { WorkflowPlanManager, seedFromDag } = await import(
-								"@xuancode/orchestrator"
-							);
-							const wfManager = new WorkflowPlanManager({
-								onEvent: (event: WorkflowEvent) => {
-									taskEventBus.publish(task.id, "workflow", {
-										type: event.type,
-										planId: event.planId,
-										stepId: event.stepId,
-										timestamp: event.timestamp,
-										data: event.data,
-									});
-									if (event.type === "step_completed") {
-										taskEventBus.publish(task.id, "token", {
-											token: "",
-											fullText: `\n\n✅ 步骤完成: ${event.data?.label || event.stepId}\n`,
-										});
-									} else if (event.type === "step_failed") {
-										taskEventBus.publish(task.id, "error", {
-											message: `步骤失败 [${event.stepId}]: ${event.data?.error}`,
-											site: "workflow",
-										});
-									} else if (event.type === "plan_completed") {
-										taskEventBus.publish(task.id, "token", {
-											token: "",
-											fullText: "\n\n🎯 工作流计划已完成!\n",
-										});
-									}
-								},
-							});
+							const { seedFromDag } = await import("@xuancode/orchestrator");
+							const wfManager = await createWorkflowManager();
 							seedFromDag(
 								wfManager,
 								decomposition.nodes,
@@ -1306,6 +1348,9 @@ export class DaemonScheduler {
 					abortSignal: combinedSignal,
 					onHook: this.onHook,
 					tracer: this.tracer ?? undefined,
+					reasoningLevel:
+						(process.env.REASONING_LEVEL as "fast" | "medium" | "expert") ||
+						undefined,
 					extraHandlerOverrides:
 						Object.keys(pluginOverrides).length > 0
 							? pluginOverrides
@@ -1318,8 +1363,13 @@ export class DaemonScheduler {
 						const requestId = randomUUID();
 						return new Promise<boolean>((resolve) => {
 							// 常驻：不设超时，直到用户允许/拒绝；任务结束时由 resolvePendingPermissions 统一 resolve(false) 防悬挂
+							// 等用户确认期间挂起空闲计时（用户想多久都行）
+							this.idleTimeouts.get(task.id)?.suspend();
 							this.pendingPermissionRequests.set(requestId, {
-								resolve: (allowed) => resolve(allowed),
+								resolve: (allowed) => {
+									this.idleTimeouts.get(task.id)?.resume();
+									resolve(allowed);
+								},
 								toolType: tc.type,
 								timestamp: Date.now(),
 								taskId: task.id,
@@ -1461,7 +1511,13 @@ export class DaemonScheduler {
 						}
 						// Strip trailing partial tag before computing clean text
 						const safeFull = fullText.replace(/<[\w\/]*$/, "");
-						const cleanText = stripToolCalls(stripThinkContent(safeFull));
+						const cleanText = stripToolCalls(
+							stripThinkContent(
+								safeFull.includes('"id":"call_')
+									? stripNativeToolJson(safeFull)
+									: safeFull,
+							),
+						);
 						// Prefix invariant guard: 防止 .trim() 或 \n{3,} 归一化导致 cleanText
 						// 比 lastCleanInline 短，破坏前缀不变性造成重复发射。
 						if (cleanText.length >= lastCleanInline.length) {
@@ -1641,6 +1697,10 @@ export class DaemonScheduler {
 		} finally {
 			unspan.forEach((fn) => fn());
 			this.abortControllers.delete(task.id);
+			// 空闲超时控制器：清计时器 + 解除活动订阅
+			this.idleTimeouts.get(task.id)?.dispose();
+			this.idleTimeouts.delete(task.id);
+			unsubIdleActivity();
 			// 任务最终状态持久化（dispose 竞态下 DB 可能已关闭 —— 不阻塞收尾）
 			try {
 				this.taskStore?.saveTask(task);
@@ -1926,14 +1986,29 @@ ${(result.finalAnswer || "").slice(0, 3000)}
 
 // ===== SSE 事件总线 =====
 
+/** 单任务事件环形缓冲容量（token 增量等小事件，2000 条足够覆盖一次断线窗口） */
+const TASK_EVENT_BUFFER_CAPACITY = 2000;
+/** 最多同时缓存多少个任务的事件流（防泄漏，淘汰最早入缓存的） */
+const TASK_BUFFER_MAX_TASKS = 200;
+
+interface BufferedTaskEvent {
+	id: number;
+	event: string;
+	data: unknown;
+}
+
 class TaskEventBus {
 	private emitter = new EventEmitter();
+	/** 全局单调事件序号（写入 SSE id: 行，客户端 Last-Event-ID 回传据此续传） */
+	private seq = 0;
+	private buffers = new Map<string, BufferedTaskEvent[]>();
 
 	subscribe(
 		taskId: string,
-		listener: (event: string, data: unknown) => void,
+		listener: (event: string, data: unknown, id?: number) => void,
 	): () => void {
-		const handler = (event: string, data: unknown) => listener(event, data);
+		const handler = (event: string, data: unknown, id?: number) =>
+			listener(event, data, id);
 		this.emitter.on(taskId, handler);
 		return () => {
 			this.emitter.off(taskId, handler);
@@ -1941,7 +2016,41 @@ class TaskEventBus {
 	}
 
 	publish(taskId: string, event: string, data: unknown): void {
-		this.emitter.emit(taskId, event, data);
+		const id = ++this.seq;
+		let buf = this.buffers.get(taskId);
+		if (!buf) {
+			// 防泄漏：任务数超上限时淘汰最早入缓存的
+			if (this.buffers.size >= TASK_BUFFER_MAX_TASKS) {
+				const oldest = this.buffers.keys().next().value;
+				if (oldest !== undefined) this.buffers.delete(oldest);
+			}
+			buf = [];
+			this.buffers.set(taskId, buf);
+		}
+		buf.push({ id, event, data });
+		if (buf.length > TASK_EVENT_BUFFER_CAPACITY) {
+			buf.splice(0, buf.length - TASK_EVENT_BUFFER_CAPACITY);
+		}
+		this.emitter.emit(taskId, event, data, id);
+	}
+
+	/** 断线续传：返回该任务中 id > afterId 的已缓冲事件（保持顺序） */
+	replay(taskId: string, afterId: number): BufferedTaskEvent[] {
+		const buf = this.buffers.get(taskId);
+		if (!buf || buf.length === 0) return [];
+		// 缓冲按 id 单调递增，二分找起点
+		let lo = 0;
+		let hi = buf.length;
+		while (lo < hi) {
+			const mid = (lo + hi) >> 1;
+			if (buf[mid].id <= afterId) lo = mid + 1;
+			else hi = mid;
+		}
+		return buf.slice(lo);
+	}
+
+	dropBuffer(taskId: string): void {
+		this.buffers.delete(taskId);
 	}
 
 	removeAllListeners(taskId: string): void {
@@ -1950,6 +2059,76 @@ class TaskEventBus {
 }
 
 const taskEventBus = new TaskEventBus();
+
+// ===== 空闲超时（idle timeout） =====
+// 长任务不能被墙钟硬杀：只有「连续 idleMs 内无任何输出/工具活动」才判定超时。
+// 等待用户回答（ask_user）/权限确认期间挂起计时——用户想多久都行。
+
+class IdleAbortController {
+	private controller = new AbortController();
+	private timer: ReturnType<typeof setTimeout> | null = null;
+	/** 挂起计数（支持并发多个等待：权限 + ask_user 同时挂起） */
+	private waitCount = 0;
+
+	constructor(
+		private idleMs: number,
+		private onTimeout?: () => void,
+	) {
+		this.arm();
+	}
+
+	get signal(): AbortSignal {
+		return this.controller.signal;
+	}
+
+	/** 任一活动（token/turn/tool_call/progress/verify…）调用：重置空闲计时 */
+	activity(): void {
+		if (this.controller.signal.aborted) return;
+		this.arm();
+	}
+
+	/** 进入用户等待：挂起计时（计数制，嵌套/并发等待安全） */
+	suspend(): void {
+		this.waitCount++;
+		this.disarm();
+	}
+
+	/** 等待解除：计数归零后恢复计时 */
+	resume(): void {
+		this.waitCount = Math.max(0, this.waitCount - 1);
+		if (this.waitCount === 0 && !this.controller.signal.aborted) {
+			this.arm();
+		}
+	}
+
+	/** 任务结束时调用：清掉计时器防泄漏 */
+	dispose(): void {
+		this.disarm();
+	}
+
+	private arm(): void {
+		this.disarm();
+		this.timer = setTimeout(() => {
+			this.timer = null;
+			if (!this.controller.signal.aborted) {
+				this.controller.abort(
+					new Error(
+						`空闲超时：连续 ${Math.round(this.idleMs / 60_000)} 分钟无输出/工具活动`,
+					),
+				);
+				this.onTimeout?.();
+			}
+		}, this.idleMs);
+		this.timer.unref?.();
+	}
+
+	private disarm(): void {
+		if (this.timer) {
+			clearTimeout(this.timer);
+			this.timer = null;
+		}
+	}
+}
 
 // ===== COMBAT Worker Path Resolution =====
 
@@ -2004,7 +2183,10 @@ class WorkerCommander {
 		{
 			resolve: (value: unknown) => void;
 			reject: (err: Error) => void;
-			timer: ReturnType<typeof setTimeout>;
+			timer: ReturnType<typeof setTimeout> | null;
+			/** 空闲感知超时：任一 worker 事件（turn/token/tool_call…）到达即重置计时，而不是墙钟一刀切 */
+			resetOnEvent: boolean;
+			timeoutMs: number;
 		}
 	>();
 	private eventHandlers = new Map<string, Set<(payload: unknown) => void>>();
@@ -2027,7 +2209,7 @@ class WorkerCommander {
 				case "response": {
 					const pending = this.pendingRequests.get(msg.correlationId);
 					if (pending) {
-						clearTimeout(pending.timer);
+						if (pending.timer) clearTimeout(pending.timer);
 						this.pendingRequests.delete(msg.correlationId);
 						if (msg.success) {
 							pending.resolve(msg.data);
@@ -2038,6 +2220,13 @@ class WorkerCommander {
 					break;
 				}
 				case "event": {
+					// 空闲感知超时：worker 执行长任务期间持续吐事件 → 重置对应 request 的计时
+					for (const [corrId, pending] of this.pendingRequests) {
+						if (pending.resetOnEvent && pending.timer) {
+							clearTimeout(pending.timer);
+							pending.timer = this.armRequestTimer(corrId, pending);
+						}
+					}
 					const handlers = this.eventHandlers.get(msg.event);
 					if (handlers) {
 						for (const handler of handlers) {
@@ -2065,7 +2254,7 @@ class WorkerCommander {
 			console.error(`[WorkerCommander] Worker exited with code ${code}`);
 			// Reject all pending requests
 			for (const [, pending] of this.pendingRequests) {
-				clearTimeout(pending.timer);
+				if (pending.timer) clearTimeout(pending.timer);
 				pending.reject(new Error(`Worker exited with code ${code}`));
 			}
 			this.pendingRequests.clear();
@@ -2087,6 +2276,7 @@ class WorkerCommander {
 		method: string,
 		params?: unknown,
 		timeoutMs = 5000,
+		opts?: { resetOnEvent?: boolean },
 	): Promise<T> {
 		// 幂等终止后或 worker 已退出：快速失败，避免悬挂到超时
 		if (this._exited || this._terminating) {
@@ -2096,27 +2286,41 @@ class WorkerCommander {
 		}
 		return new Promise((resolve, reject) => {
 			const msg = createRequest(method, params);
-			const timer = setTimeout(() => {
-				this.pendingRequests.delete(msg.correlationId);
-				reject(
-					new Error(
-						`Worker request "${method}" timed out after ${timeoutMs}ms`,
-					),
-				);
-			}, timeoutMs);
-			this.pendingRequests.set(msg.correlationId, {
+			const pending = {
 				resolve: resolve as (v: unknown) => void,
 				reject,
-				timer,
-			});
+				timer: null as ReturnType<typeof setTimeout> | null,
+				resetOnEvent: opts?.resetOnEvent ?? false,
+				timeoutMs,
+			};
+			pending.timer = this.armRequestTimer(msg.correlationId, pending);
+			this.pendingRequests.set(msg.correlationId, pending);
 			try {
 				this.worker.postMessage(msg);
 			} catch (err: any) {
-				clearTimeout(timer);
+				if (pending.timer) clearTimeout(pending.timer);
 				this.pendingRequests.delete(msg.correlationId);
 				reject(err);
 			}
 		});
+	}
+
+	/** 为 pending request 装载超时计时器（resetOnEvent 模式下每次活动都会重新装载） */
+	private armRequestTimer(
+		correlationId: string,
+		pending: {
+			reject: (err: Error) => void;
+			timeoutMs: number;
+		},
+	): ReturnType<typeof setTimeout> {
+		return setTimeout(() => {
+			this.pendingRequests.delete(correlationId);
+			pending.reject(
+				new Error(
+					`Worker request timed out after ${pending.timeoutMs}ms (idle)`,
+				),
+			);
+		}, pending.timeoutMs);
 	}
 
 	/** Subscribe to an event from the worker */
@@ -2163,7 +2367,7 @@ export interface DaemonServerOptions {
 	apiKey?: string;
 	/** 速率限制 (请求/分钟, 0 = 不限制, 默认 60) */
 	rateLimitRPM?: number;
-	/** 任务最大执行时间 (毫秒, 默认 600000 = 10 分钟) */
+	/** 任务空闲超时 (毫秒, 默认 600000 = 10 分钟)。连续无输出/工具活动才计时，非墙钟硬杀 */
 	maxTaskDuration?: number;
 	/** 各供应商 API Key 映射，例如 { deepseek: "sk-xxx", openai: "sk-xxx" } */
 	apiKeys?: Record<string, string>;
@@ -2619,6 +2823,32 @@ export async function startDaemonServer(
 					apiVersion: API_VERSION,
 					daemonVersion: DAEMON_VERSION,
 				});
+				return;
+			}
+
+			// --- OpenAPI 规范暴露 ---
+			if (req.method === "GET" && url.pathname === "/docs/openapi.yaml") {
+				const specPath = path.resolve(process.cwd(), "docs/openapi.yaml");
+				// 也尝试从 monorepo 根目录查找
+				const altPath = path.resolve(process.cwd(), "../docs/openapi.yaml");
+				const target = fs.existsSync(specPath)
+					? specPath
+					: fs.existsSync(altPath)
+						? altPath
+						: null;
+				if (target) {
+					const yaml = fs.readFileSync(target, "utf-8");
+					res.writeHead(200, {
+						"Content-Type": "text/yaml; charset=utf-8",
+						"Access-Control-Allow-Origin": "*",
+						"Cache-Control": "public, max-age=3600",
+					});
+					res.end(yaml);
+				} else {
+					respond(res, 404, {
+						error: "OpenAPI spec not found",
+					});
+				}
 				return;
 			}
 
@@ -3178,6 +3408,15 @@ export async function startDaemonServer(
 					"X-Accel-Buffering": "no",
 				});
 
+				// 断线续传：标准 SSE Last-Event-ID 头（浏览器 EventSource 重连自动携带），兼容 ?lastEventId= 查询参数
+				const lastEventIdHeader = req.headers["last-event-id"];
+				const lastEventIdRaw =
+					(Array.isArray(lastEventIdHeader)
+						? lastEventIdHeader[0]
+						: lastEventIdHeader) || url.searchParams.get("lastEventId");
+				const lastEventId = Number.parseInt(lastEventIdRaw || "", 10);
+				const hasLastEventId = Number.isFinite(lastEventId);
+
 				// 发送初始连接事件
 				try {
 					res.write("event: connected\ndata: {}\n\n");
@@ -3185,15 +3424,55 @@ export async function startDaemonServer(
 					/* client may have disconnected already */
 				}
 
-				const unsubscribe = taskEventBus.subscribe(taskId, (event, data) => {
-					try {
-						res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-					} catch {
-						// Client disconnected — clean up
-						unsubscribe();
-						taskEventBus.removeAllListeners(taskId);
+				const writeSSE = (event: string, data: unknown, id?: number) => {
+					const idLine = id !== undefined ? `id: ${id}\n` : "";
+					res.write(
+						`${idLine}event: ${event}\ndata: ${JSON.stringify(data)}\n\n`,
+					);
+				};
+
+				// 先订阅（回放期间到达的实时事件进队列），回放完再冲刷——保证事件不丢也不重
+				let replayDone = !hasLastEventId;
+				const pendingLive: Array<[string, unknown, number]> = [];
+
+				const unsubscribe = taskEventBus.subscribe(
+					taskId,
+					(event, data, id) => {
+						if (!replayDone) {
+							pendingLive.push([event, data, id ?? 0]);
+							return;
+						}
+						try {
+							writeSSE(event, data, id);
+						} catch {
+							// Client disconnected — clean up（只摘除自己的监听，不能 removeAllListeners 误杀 worker 桥接/空闲活动监听）
+							unsubscribe();
+						}
+					},
+				);
+
+				// 回放缺口：只发客户端错过的（id > lastEventId）事件，增量 token 恰好补齐断线窗口
+				if (!replayDone) {
+					let maxReplayed = lastEventId;
+					for (const e of taskEventBus.replay(taskId, lastEventId)) {
+						try {
+							writeSSE(e.event, e.data, e.id);
+							maxReplayed = e.id;
+						} catch {
+							break;
+						}
 					}
-				});
+					replayDone = true;
+					for (const [event, data, id] of pendingLive) {
+						if (id <= maxReplayed) continue;
+						try {
+							writeSSE(event, data, id);
+						} catch {
+							break;
+						}
+					}
+					pendingLive.length = 0;
+				}
 
 				// SSE 心跳：每 20s 发 ping 事件，防止代理/浏览器因空闲断开连接
 				const heartbeatTimer = setInterval(() => {
@@ -3202,14 +3481,12 @@ export async function startDaemonServer(
 					} catch {
 						clearInterval(heartbeatTimer);
 						unsubscribe();
-						taskEventBus.removeAllListeners(taskId);
 					}
 				}, 20_000);
 
 				req.on("close", () => {
 					clearInterval(heartbeatTimer);
 					unsubscribe();
-					taskEventBus.removeAllListeners(taskId);
 				});
 
 				return;
@@ -3504,6 +3781,7 @@ export async function startDaemonServer(
 				const newApiKey = body?.apiKey;
 				const newChatMode = body?.chatMode as string | undefined;
 				const newCloudToken = body?.cloudToken as string | undefined;
+				const newReasoningLevel = body?.reasoningLevel as string | undefined;
 
 				if (!newProvider || !newModelName) {
 					respond(res, 400, { error: "缺少必填字段: provider, modelName" });
@@ -3541,6 +3819,14 @@ export async function startDaemonServer(
 					if (newProvider === "zhipu") process.env.ZHIPU_API_KEY = newApiKey;
 					if (newProvider === "volcengine")
 						process.env.VOLC_API_KEY = newApiKey;
+				}
+
+				// Store reasoning level for task submission
+				if (
+					newReasoningLevel &&
+					["fast", "medium", "expert"].includes(newReasoningLevel)
+				) {
+					process.env.REASONING_LEVEL = newReasoningLevel;
 				}
 
 				try {

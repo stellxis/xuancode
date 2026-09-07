@@ -186,9 +186,51 @@ export function hasToolCallArtifacts(text: string): boolean {
  * 需要在这里剔除，避免泄漏到用户可见的流式/最终文本。
  */
 export function stripNativeToolJson(text: string): string {
-	return text.replace(/\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\}/g, (m) => {
+	// 括号计数法：逐字符扫描，正确处理任意深度嵌套和字符串内的花括号。
+	// 原来的正则只支持 3 层嵌套，大文件内容（如 JS 源码含模板字面量）会超出限制导致匹配失败。
+	const result: string[] = [];
+	let i = 0;
+	while (i < text.length) {
+		if (text[i] !== "{") {
+			result.push(text[i]);
+			i++;
+			continue;
+		}
+		// 找到一个 '{'，尝试提取完整的 JSON 对象
+		let depth = 0;
+		let j = i;
+		let inString = false;
+		let escaped = false;
+		for (; j < text.length; j++) {
+			const ch = text[j];
+			if (escaped) {
+				escaped = false;
+				continue;
+			}
+			if (ch === "\\") {
+				escaped = inString; // 只在字符串内才转义
+				continue;
+			}
+			if (ch === '"') {
+				inString = !inString;
+				continue;
+			}
+			if (inString) continue;
+			if (ch === "{") depth++;
+			else if (ch === "}") {
+				depth--;
+				if (depth === 0) break;
+			}
+		}
+		if (depth !== 0) {
+			// 括号不匹配，原样保留
+			result.push(text[i]);
+			i++;
+			continue;
+		}
+		const candidate = text.slice(i, j + 1);
 		try {
-			const obj = JSON.parse(m);
+			const obj = JSON.parse(candidate);
 			if (
 				obj &&
 				typeof obj === "object" &&
@@ -196,13 +238,18 @@ export function stripNativeToolJson(text: string): string {
 				typeof (obj as any).id === "string" &&
 				(obj as any).id.startsWith("call_")
 			) {
-				return "";
+				// 是原生工具调用 JSON，跳过（不追加到结果）
+				i = j + 1;
+				continue;
 			}
 		} catch {
-			/* 非合法 JSON，保留 */
+			/* 非合法 JSON，原样保留 */
 		}
-		return m;
-	});
+		// 不是工具调用 JSON，原样保留
+		result.push(candidate);
+		i = j + 1;
+	}
+	return result.join("");
 }
 
 export function stripToolCalls(text: string): string {

@@ -596,9 +596,10 @@ describe("TAOR loop integration", () => {
 		expect(verifyEvents[0].type).toBe("gate_blocked");
 		expect(verifyEvents[0].command).toBe("npm test");
 		expect(verifyEvents[0].rounds).toBeGreaterThanOrEqual(1);
-		// 拦截达到轮次上限后放行，任务能正常结束
-		expect(result.stopReason).toBe(StopReason.NO_TOOL_USE);
-		expect(result.finalAnswer).toContain("任务完成");
+		// 拦截达到轮次上限后显式失败（不再静默放行伪装成功）
+		expect(verifyEvents[verifyEvents.length - 1].type).toBe("verify_failed");
+		expect(result.stopReason).toBe(StopReason.VERIFY_FAILED);
+		expect(result.finalAnswer).toContain("任务未达标");
 	});
 
 	// ── B3 断点续跑 ──
@@ -752,7 +753,7 @@ describe("TAOR loop integration", () => {
 		expect(result.finalAnswer).toContain("任务完成");
 	});
 
-	it("C2: goal_mode 未达标 → goal_blocked 注入验收标准，达上限放行", async () => {
+	it("C2: goal_mode 未达标 → goal_blocked 注入验收标准，达上限显式失败", async () => {
 		const dir = path.join(TEST_DIR, "goaltest-limit");
 		fs.mkdirSync(dir, { recursive: true });
 
@@ -785,9 +786,10 @@ describe("TAOR loop integration", () => {
 		const blocked = events.filter((e) => e.type === "goal_blocked");
 		expect(blocked.length).toBe(2);
 		expect(blocked[0].message).toContain("pnpm test");
-		expect(events[events.length - 1].type).toBe("goal_passed");
-		expect(result.stopReason).toBe(StopReason.NO_TOOL_USE);
-		expect(result.finalAnswer).toContain("未能确认完全满足");
+		// 达上限后显式失败（不再伪装 goal_passed）
+		expect(events[events.length - 1].type).toBe("goal_failed");
+		expect(result.stopReason).toBe(StopReason.VERIFY_FAILED);
+		expect(result.finalAnswer).toContain("未能确认满足");
 	});
 
 	// ── C3-M1 原生 Tool Calling 共享核心 ──

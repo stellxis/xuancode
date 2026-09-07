@@ -171,7 +171,8 @@ export class DaemonClient {
 	/**
 	 * GET /tasks/:id/stream — SSE 流解析
 	 * 使用 Node.js 内置 fetch + ReadableStream，无外部依赖
-	 * resolve 在 complete 事件时，reject 在 error_fatal 或连接断开时
+	 * resolve 在 complete 事件时，reject 在 error_fatal 或重连耗尽时。
+	 * 断线自动重连：携带 Last-Event-ID 头，daemon 会回放错过的缓冲事件（不丢不重）。
 	 */
 	async streamTask(
 		taskId: string,
@@ -180,48 +181,132 @@ export class DaemonClient {
 	): Promise<TaskResult> {
 		callbacks.onTaskCreated?.(taskId);
 		const url = `${this.baseUrl}/tasks/${encodeURIComponent(taskId)}/stream`;
-		const response = await fetch(url, { signal, headers: this.headers() });
+		const MAX_RECONNECTS = 5;
+		let lastEventId = 0;
+		let attempts = 0;
 
-		if (!response.ok) {
-			throw new Error(`SSE 连接失败: ${response.statusText}`);
-		}
+		return new Promise<TaskResult>((outerResolve, outerReject) => {
+			// 本次连接是否已落定（resolve/reject 后不再走断线重连）
+			let settled = false;
+			const settleResolve = (value: TaskResult): void => {
+				settled = true;
+				attempts = MAX_RECONNECTS + 1; // 已落定，禁止再重连
+				outerResolve(value);
+			};
+			const settleReject = (err: Error): void => {
+				settled = true;
+				attempts = MAX_RECONNECTS + 1;
+				outerReject(err);
+			};
 
-		const body = response.body;
-		if (!body) throw new Error("SSE 响应无 body");
+			const attempt = (): void => {
+				if (signal?.aborted) {
+					outerReject(new Error("已取消"));
+					return;
+				}
+				const headers = this.headers();
+				if (lastEventId > 0) {
+					headers["Last-Event-ID"] = String(lastEventId);
+				}
 
-		const reader = body.getReader();
-		const decoder = new TextDecoder();
-		let buffer = "";
+				// 断线处理：重连前确认任务还活着（已完成/失败的任务不再重连）
+				const handleDisconnect = (err: unknown): void => {
+					if (settled) return;
+					attempts++;
+					if (attempts > MAX_RECONNECTS || signal?.aborted) {
+						settleReject(err instanceof Error ? err : new Error(String(err)));
+						return;
+					}
+					fetch(`${this.baseUrl}/tasks/${encodeURIComponent(taskId)}`, {
+						headers: this.headers(),
+					})
+						.then(
+							(r) =>
+								(r.ok ? r.json() : null) as Promise<{ status?: string } | null>,
+						)
+						.then((task) => {
+							if (
+								task &&
+								["completed", "failed", "cancelled"].includes(task.status || "")
+							) {
+								settleReject(
+									new Error(
+										`任务已结束（${task.status}）但未收到 complete 事件`,
+									),
+								);
+								return;
+							}
+							const delay = Math.min(8000, 500 * 2 ** (attempts - 1));
+							setTimeout(attempt, delay);
+						})
+						.catch(() => {
+							// daemon 不可达 → 按指数退避重试
+							const delay = Math.min(8000, 500 * 2 ** (attempts - 1));
+							setTimeout(attempt, delay);
+						});
+				};
 
-		return new Promise<TaskResult>((resolve, reject) => {
-			const pump = (): void => {
-				reader
-					.read()
-					.then(({ done, value }) => {
-						if (done) {
-							// 流正常结束但未收到 complete 事件
-							reject(new Error("SSE 流意外结束"));
-							return;
+				fetch(url, { signal, headers })
+					.then((response) => {
+						if (!response.ok) {
+							throw new Error(`SSE 连接失败: ${response.statusText}`);
 						}
+						const body = response.body;
+						if (!body) throw new Error("SSE 响应无 body");
 
-						buffer += decoder.decode(value, { stream: true });
-						const blocks = buffer.split("\n\n");
-						// 最后一个 block 可能不完整，留到下次
-						buffer = blocks.pop() || "";
+						const reader = body.getReader();
+						const decoder = new TextDecoder();
+						let buffer = "";
 
-						for (const block of blocks) {
-							if (!block.trim()) continue;
-							this.parseSSEBlock(block, callbacks, resolve, reject);
-						}
+						const pump = (): void => {
+							reader
+								.read()
+								.then(({ done, value }) => {
+									if (done) {
+										// 流意外结束（未收到 complete）→ 视为断线，走重连
+										handleDisconnect(new Error("SSE 流意外结束"));
+										return;
+									}
+
+									buffer += decoder.decode(value, { stream: true });
+									const blocks = buffer.split("\n\n");
+									// 最后一个 block 可能不完整，留到下次
+									buffer = blocks.pop() || "";
+
+									for (const block of blocks) {
+										if (!block.trim()) continue;
+										// 记录事件序号，重连时据此回放缺口
+										const idMatch = block.match(/^id: (\d+)$/m);
+										if (idMatch) {
+											lastEventId = Number.parseInt(idMatch[1], 10);
+										}
+										this.parseSSEBlock(
+											block,
+											callbacks,
+											settleResolve,
+											settleReject,
+										);
+									}
+
+									pump();
+								})
+								.catch((err: unknown) => {
+									handleDisconnect(
+										err instanceof Error
+											? err
+											: new Error(`SSE 读取错误: ${err}`),
+									);
+								});
+						};
 
 						pump();
 					})
 					.catch((err: unknown) => {
-						reject(new Error(`SSE 读取错误: ${err}`));
+						handleDisconnect(err);
 					});
 			};
 
-			pump();
+			attempt();
 		});
 	}
 

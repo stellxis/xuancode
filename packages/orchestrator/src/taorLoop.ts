@@ -200,6 +200,8 @@ export interface TaorLoopOptions {
 		def: ToolDef;
 		handler: (params: ToolCallParams) => Promise<ToolResult>;
 	}>;
+	/** 推理强度 — 透传给 ModelRouter.setReasoningLevel()，由各适配器翻译为原生参数 */
+	reasoningLevel?: "fast" | "medium" | "expert";
 	/** 插件工具 handler 覆盖 — key 为 tool type，优先级高于内置 ToolManager */
 	extraHandlerOverrides?: Record<
 		string,
@@ -211,9 +213,15 @@ export interface TaorLoopOptions {
 		tc: ToolCallParams,
 		decision: { requireConfirm: boolean; reason: string; risk?: any },
 	) => Promise<boolean>;
-	/** 程序化验证 gate 事件回调（verifyMode === "auto"）：gate 拦截 / 验证通过时上报，供前端展示验证横幅 */
+	/** 程序化验证 gate 事件回调（verifyMode === "auto"）：gate 拦截 / 验证通过 / 重试到顶失败时上报，供前端展示验证横幅 */
 	onVerifyGate?: (info: {
-		type: "gate_blocked" | "verify_passed" | "goal_blocked" | "goal_passed";
+		type:
+			| "gate_blocked"
+			| "verify_passed"
+			| "goal_blocked"
+			| "goal_passed"
+			| "verify_failed"
+			| "goal_failed";
 		message: string;
 		command?: string;
 		rounds: number;
@@ -254,6 +262,15 @@ export async function runTaorLoop(
 	options: TaorLoopOptions,
 ): Promise<TaorLoopResult> {
 	const startTime = performance.now();
+
+	// 透传推理强度到 ModelRouter（若支持）
+	if (
+		options.reasoningLevel &&
+		typeof (options.model as any).setReasoningLevel === "function"
+	) {
+		(options.model as any).setReasoningLevel(options.reasoningLevel);
+	}
+
 	const maxTurns = options.config?.maxTurns ?? 50;
 	const maxContinuations = options.config?.maxContinuations ?? 0;
 	let continuationCount = 0;
@@ -772,15 +789,25 @@ export async function runTaorLoop(
 							stateManager.addMessage({ role: "user", content: msg });
 							continue;
 						}
-						// 达重试上限 → 放行，附未达标提示
+						// 达重试上限 → 显式失败（不静默放行伪装成功）：附验收标准 + 关键错误摘要
+						const goalErrs = checkpoint.verifyState?.lastOutput
+							? extractVerifyErrors(checkpoint.verifyState.lastOutput, 8)
+							: "";
+						const goalFailSummary = [
+							`⚠️ 任务未达标：已达目标重试上限（${goalMaxRounds} 轮），验收标准「${goalCriterion}」未能确认满足。`,
+							goalErrs ? `最近验证的关键错误：\n${goalErrs}` : "",
+							"以下为模型最后一轮输出（未经验证通过，请人工复核）：",
+						]
+							.filter(Boolean)
+							.join("\n\n");
 						options.onVerifyGate?.({
-							type: "goal_passed",
-							message: `已达目标重试上限（${goalMaxRounds} 轮），验收标准未能确认完全满足，按轮次上限放行。`,
+							type: "goal_failed",
+							message: `已达目标重试上限（${goalMaxRounds} 轮），验收标准「${goalCriterion}」未能确认满足，任务显式结束。`,
 							command: verifyCommand,
 							rounds: goalGateBlocks,
 						});
-						finalAnswer = `${stripToolCalls(cleanResponse) || cleanResponse}\n\n⚠️ 已达目标重试上限（${goalMaxRounds} 轮），验收标准「${goalCriterion}」未能确认完全满足。`;
-						stateManager.setStopReason(StopReason.NO_TOOL_USE);
+						finalAnswer = `${stripToolCalls(cleanResponse) || cleanResponse}\n\n---\n${goalFailSummary}`;
+						stateManager.setStopReason(StopReason.VERIFY_FAILED);
 						break;
 					}
 					options.onVerifyGate?.({
@@ -811,18 +838,40 @@ export async function runTaorLoop(
 					}
 					const vs = checkpoint.verifyState;
 					const passed = vs?.passed === true;
-					const passMsg = passed
-						? "验证通过，任务正常结束。"
-						: vs?.ran
-							? `验证已尝试 ${vs?.rounds ?? 0} 次未通过，已按轮次上限放行。`
-							: "";
-					if (passMsg) {
+					if (passed) {
 						options.onVerifyGate?.({
 							type: "verify_passed",
-							message: passMsg,
+							message: "验证通过，任务正常结束。",
 							command: verifyCommand,
 							rounds: verifyGateBlocks,
 						});
+					} else if (vs?.ran || checkpoint.modifiedCount > 0) {
+						// 重试到顶仍未通过/未验证 → 显式失败（不静默放行伪装成功）：附关键错误摘要
+						const neverRan = !vs?.ran;
+						const gateErrs =
+							vs?.lastOutput && !neverRan
+								? extractVerifyErrors(vs.lastOutput, 8)
+								: "";
+						const failSummary = [
+							neverRan
+								? "⚠️ 任务未达标：代码已修改但从未执行验证，达到拦截次数上限，任务显式结束。"
+								: `⚠️ 任务未达标：验证已尝试 ${vs?.rounds ?? 0} 次仍未通过，达到重试上限，任务显式结束。`,
+							gateErrs ? `最近验证的关键错误：\n${gateErrs}` : "",
+							"以下为模型最后一轮输出（未经验证通过，请人工复核）：",
+						]
+							.filter(Boolean)
+							.join("\n\n");
+						options.onVerifyGate?.({
+							type: "verify_failed",
+							message: neverRan
+								? "代码已修改但从未执行验证，达到拦截次数上限，任务显式结束。"
+								: `验证已尝试 ${vs?.rounds ?? 0} 次未通过，达到重试上限，任务显式结束。`,
+							command: verifyCommand,
+							rounds: verifyGateBlocks,
+						});
+						finalAnswer = `${stripToolCalls(cleanResponse) || cleanResponse}\n\n---\n${failSummary}`;
+						stateManager.setStopReason(StopReason.VERIFY_FAILED);
+						break;
 					}
 				}
 			}
@@ -1048,9 +1097,12 @@ export async function runTaorLoop(
 				if (options.resumeId) {
 					writeResumeState(options.workDir, options.resumeId, {
 						version: 1,
-						messages: st.messages.slice(-60),
+						// 完整 transcript（stateManager 压缩已约束大小；400 条只是防极端的兜底，不再是 60 条截断）
+						messages: st.messages.slice(-400),
 						turnCount: st.turnCount,
 						stopReason: st.stopReason ?? undefined,
+						// 工作流计划快照：续跑精确恢复步骤状态，不重新分解
+						plan: (workflowManager?.getPlan() as any) ?? null,
 						updatedAt: Date.now(),
 					});
 				}

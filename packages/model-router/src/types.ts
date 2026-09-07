@@ -49,6 +49,9 @@ export interface ApiToolDefinition {
 	};
 }
 
+/** 推理强度等级 — 前端统一三档，各适配器翻译为原生参数 */
+export type ReasoningLevel = "fast" | "medium" | "expert";
+
 /** Unified provider adapter interface */
 export interface ProviderAdapter {
 	readonly provider: string;
@@ -57,12 +60,14 @@ export interface ProviderAdapter {
 		messages: Message[],
 		systemPrompt?: string,
 		tools?: ApiToolDefinition[],
+		reasoningLevel?: ReasoningLevel,
 	): Promise<string>;
 	/** 富结构流式：文本增量(string) 或 结构化工具调用事件（{type:"tool_calls"}，阵营 B 通道） */
 	chatStream(
 		messages: Message[],
 		systemPrompt?: string,
 		tools?: ApiToolDefinition[],
+		reasoningLevel?: ReasoningLevel,
 	): AsyncGenerator<ModelStreamEvent, void, unknown>;
 }
 

@@ -1,6 +1,6 @@
 import { parseSSEStream } from "@xuancode/model-adapter";
 import type { Message } from "@xuancode/types";
-import type { ApiToolDefinition } from "../types";
+import type { ApiToolDefinition, ReasoningLevel } from "../types";
 import { BaseAdapter } from "./base";
 
 interface Config {
@@ -32,8 +32,15 @@ export class OllamaAdapter extends BaseAdapter {
 		messages: Message[],
 		systemPrompt?: string,
 		tools?: ApiToolDefinition[],
+		reasoningLevel?: ReasoningLevel,
 	): Promise<string> {
-		const body = this.buildBody(messages, systemPrompt, false, tools);
+		const body = this.buildBody(
+			messages,
+			systemPrompt,
+			false,
+			tools,
+			reasoningLevel,
+		);
 		const res = await fetch(`${this.config.baseUrl}/v1/chat/completions`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
@@ -57,8 +64,15 @@ export class OllamaAdapter extends BaseAdapter {
 		messages: Message[],
 		systemPrompt?: string,
 		tools?: ApiToolDefinition[],
+		reasoningLevel?: ReasoningLevel,
 	): AsyncGenerator<string, void, unknown> {
-		const body = this.buildBody(messages, systemPrompt, true, tools);
+		const body = this.buildBody(
+			messages,
+			systemPrompt,
+			true,
+			tools,
+			reasoningLevel,
+		);
 		const res = await fetch(`${this.config.baseUrl}/v1/chat/completions`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
@@ -80,6 +94,7 @@ export class OllamaAdapter extends BaseAdapter {
 		systemPrompt?: string,
 		stream?: boolean,
 		tools?: ApiToolDefinition[],
+		_reasoningLevel?: ReasoningLevel,
 	) {
 		const msgs = [];
 		if (systemPrompt) msgs.push({ role: "system", content: systemPrompt });
