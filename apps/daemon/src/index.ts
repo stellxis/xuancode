@@ -2551,18 +2551,23 @@ export async function startDaemonServer(
 
 	// ===== 代码智能服务（语义搜索） =====
 	// 索引按项目隔离，避免切换项目时加载错误缓存
-	const projectHash = simpleHash(workDir);
-	const codeIntelligenceIndexPath = path.join(
-		os.homedir(),
-		".xuancode",
-		`code-index-${projectHash}.json`,
-	);
-	const codeIntelligenceService = new CodeIntelligenceService(
-		workDir,
-		codeIntelligenceIndexPath,
-	);
-	// 后台异步构建索引
-	codeIntelligenceService.ensureIndex().catch(() => {});
+	// 注意：workDir 可能在 daemon 启动后才通过 /daemon/workdir 设置，
+	// 因此用 let 保存，切换项目时重建服务并重新索引
+	const buildCodeIntelligenceService = (dir: string) => {
+		const projectHash = simpleHash(dir);
+		const codeIntelligenceIndexPath = path.join(
+			os.homedir(),
+			".xuancode",
+			`code-index-${projectHash}.json`,
+		);
+		const service = new CodeIntelligenceService(dir, codeIntelligenceIndexPath);
+		// 后台异步构建索引（失败记录日志，status 轮询会再次触发重试）
+		service.ensureIndex().catch((e) => {
+			console.error("[玄码] 代码索引构建失败:", e);
+		});
+		return service;
+	};
+	let codeIntelligenceService = buildCodeIntelligenceService(workDir);
 
 	// 自改进优化器（仅在 telemetry 启用时可用）
 	const optimizerService =
@@ -3997,7 +4002,14 @@ export async function startDaemonServer(
 				req.method === "GET" &&
 				url.pathname === "/daemon/code-index/status"
 			) {
-				respond(res, 200, codeIntelligenceService.getStatus());
+				const st = codeIntelligenceService.getStatus();
+				if (!st.ready && !st.indexing) {
+					// 索引从未建成（启动时失败或 workDir 后来才设置）→ 惰性重建，避免永远卡在「未索引」
+					codeIntelligenceService.ensureIndex().catch((e) => {
+						console.error("[玄码] 代码索引构建失败:", e);
+					});
+				}
+				respond(res, 200, st);
 				return;
 			}
 
@@ -4063,7 +4075,11 @@ export async function startDaemonServer(
 					return;
 				}
 				scheduler.setWorkDir(dir);
-				respond(res, 200, { status: "ok", workDir: dir });
+				// 切换项目时重建代码索引服务（索引按项目隔离）
+				const normalizedDir = normalizeWinPath(dir);
+				codeIntelligenceService.destroy();
+				codeIntelligenceService = buildCodeIntelligenceService(normalizedDir);
+				respond(res, 200, { status: "ok", workDir: normalizedDir });
 				return;
 			}
 

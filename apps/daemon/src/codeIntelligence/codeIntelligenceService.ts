@@ -45,6 +45,7 @@ export class CodeIntelligenceService {
 
 		this.indexing = true;
 		this.aborted = false;
+		const service = this;
 
 		try {
 			// 增量索引：复用磁盘上缓存的索引，仅重新解析 mtime 变化的文件
@@ -55,11 +56,11 @@ export class CodeIntelligenceService {
 				maxDepth: INDEX_PERF_DEFAULTS.maxDepth,
 				timeoutMs: INDEX_PERF_DEFAULTS.timeoutMs,
 				onProgress: (processed, total, currentFile) => {
-					this.indexProgress = { processed, total, currentFile };
+					service.indexProgress = { processed, total, currentFile };
 				},
 				signal: {
 					get aborted() {
-						return this.aborted;
+						return service.aborted;
 					},
 				} as AbortSignal,
 			});
