@@ -111,3 +111,79 @@ describe("DaemonClient 协议版本协商", () => {
 		expect(compat.needsUpgrade).toBeNull();
 	});
 });
+
+describe("DaemonClient 任务列表与重连", () => {
+	it("listTasks 请求携带 limit 参数并解析列表", async () => {
+		let seenPath = "";
+		const baseUrl = await startMockDaemon((req, res) => {
+			seenPath = req.url || "";
+			res.writeHead(200, { "Content-Type": "application/json" });
+			res.end(
+				JSON.stringify([
+					{
+						id: "task-abc123",
+						status: "running",
+						userInput: "修复登录页",
+						currentTurn: 3,
+					},
+					{ id: "task-def456", status: "completed", userInput: "写单测" },
+				]),
+			);
+		});
+		const client = new DaemonClient({ baseUrl });
+		const tasks = await client.listTasks(20);
+		expect(seenPath).toBe("/tasks?limit=20");
+		expect(tasks).toHaveLength(2);
+		expect(tasks[0]).toMatchObject({ id: "task-abc123", status: "running" });
+		expect(tasks[0].currentTurn).toBe(3);
+	});
+
+	it("重连运行中的任务：接收后续事件直到 complete", async () => {
+		const baseUrl = await startMockDaemon((req, res) => {
+			res.writeHead(200, {
+				"Content-Type": "text/event-stream",
+				"Cache-Control": "no-cache",
+			});
+			// 模拟重连后 daemon 只推送新事件
+			res.write('event: turn\ndata: {"turn": 7}\n\n');
+			res.write(
+				'event: workflow\ndata: {"type": "step_completed", "stepId": "s1"}\n\n',
+			);
+			setTimeout(() => {
+				res.write(
+					`event: complete\ndata: ${JSON.stringify({
+						finalAnswer: "任务完成",
+						turnCount: 8,
+						toolCallCount: 12,
+						stopReason: "no_tool_use",
+						duration: 42000,
+						contextUsage: 34,
+					})}\n\n`,
+				);
+				res.end();
+			}, 30);
+		});
+		const client = new DaemonClient({ baseUrl });
+		const events: string[] = [];
+		let lastTurn = 0;
+		let workflowStep = "";
+		const result = await client.streamTask("task-running-1", {
+			onTurn: (t) => {
+				lastTurn = t;
+			},
+			onWorkflow: (ev: any) => {
+				events.push(ev.type);
+				workflowStep = ev.stepId;
+			},
+		});
+		expect(lastTurn).toBe(7);
+		expect(events).toEqual(["step_completed"]);
+		expect(workflowStep).toBe("s1");
+		expect(result).toMatchObject({
+			finalAnswer: "任务完成",
+			turnCount: 8,
+			stopReason: "no_tool_use",
+			contextUsage: 34,
+		});
+	});
+});

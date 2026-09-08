@@ -2,7 +2,7 @@
 
 **一切皆五行 · 国风科技智能编码中枢 — AI Code Agent Harness**
 
-> 太极生两仪,两仪生四象,四象生五行。玄码以五行架构为纲,以 TAOR 循环为轴,
+> 玄码以五行架构为纲,以 TAOR 循环为轴,
 > 打造全球领先的 AI Agent Harness 系统。
 
 [![License](https://img.shields.io/badge/License-Apache--2.0_OR_Commercial-blue)](LICENSE)
@@ -163,7 +163,7 @@ pnpm lint    # biome 全量格式化 + lint
 | 权限系统 | 5 档 (无命名) | **观/问/信/任/达** |
 | 终端 UI | 功能优先 | **国风美学 + 功能并重** |
 | 记忆系统 | 文件索引 | **文件索引 + 自动蒸馏** |
-| 插件生态 | MCP + Skills | **五行元素分类 + MCP 兼容** |
+| 插件生态 | MCP + Skills | **五行元素内置件+外联插件+自组合skill+MCP+ACP+XEP拓展** |
 | 任务追踪 | 纯文本滚动输出 | **可视化追踪系统: DAG 拓扑分解 + 实时步骤状态 + 历史回放** |
 | 代码洞察 | 无原生依赖图谱 | **轻量拓扑高阶图谱: 依赖图 + 循环依赖检测 + 入口/孤立识别** |
 | 会话存储 | 轮转压缩文本 | **append-only 事件流: JSONL 逐事件落盘 + 审计回放 + 自动轮转** |

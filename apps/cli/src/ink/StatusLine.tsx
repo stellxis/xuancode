@@ -17,6 +17,15 @@ interface StatusLineProps {
 
 const TREND_MAP = ["↘", "→", "↗"] as const;
 
+/** 信任模式国风单字（观/问/信/任/化） */
+const MODE_LABELS: Record<string, string> = {
+	plan: "观",
+	default: "问",
+	trust: "信",
+	auto: "任",
+	bypass: "化",
+};
+
 function getMemoryTrend(activity: number): { icon: string; color: string } {
 	if (activity > 60) return { icon: TREND_MAP[2], color: colors.green };
 	if (activity > 30) return { icon: TREND_MAP[1], color: colors.gold };
@@ -36,11 +45,13 @@ export default React.memo(function StatusLine({
 	const modeColor = colors.mode[mode] || colors.dim;
 
 	const items: { text: string; color?: string }[] = [
-		{ text: mode, color: modeColor },
+		{ text: MODE_LABELS[mode] || mode, color: modeColor },
 		{ text: `${provider}/${modelName}` },
 	];
-	if (turn !== undefined) items.push({ text: `${turn}轮` });
-	if (contextUsage !== undefined) items.push({ text: `${contextUsage}%` });
+	if (turn !== undefined && turn > 0) items.push({ text: `${turn}轮` });
+	// 0% 与 ContextWaterline 的隐藏口径一致，空闲时不显示噪音
+	if (contextUsage !== undefined && contextUsage > 0)
+		items.push({ text: `${contextUsage}%` });
 	if (compactLevel !== undefined && compactLevel > 0)
 		items.push({ text: `Lv${compactLevel}` });
 
@@ -50,7 +61,7 @@ export default React.memo(function StatusLine({
 		if (memoryCount === 0) return { text: "记忆-", color: colors.dim };
 		const trend = getMemoryTrend(memoryActivity ?? 50);
 		return {
-			text: `记忆${trend.icon} (${memoryCount}条, ${memoryActivity ?? 0}%)`,
+			text: `记忆${trend.icon} (${memoryCount}, ${memoryActivity ?? 0}%)`,
 			color: trend.color,
 		};
 	}, [memoryCount, memoryActivity]);

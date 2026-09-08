@@ -17,6 +17,16 @@ export type { WorkflowEvent, TaskResult };
 
 // ===== Types =====
 
+/** 任务摘要（GET /tasks 列表项，daemon 内存 + SQLite 历史合并） */
+export interface TaskSummary {
+	id: string;
+	status: string;
+	userInput?: string;
+	createdAt?: string;
+	currentTurn?: number;
+	progressSummary?: string;
+}
+
 export interface StreamCallbacks {
 	onConnected?: () => void;
 	onTurn?: (turn: number) => void;
@@ -147,6 +157,15 @@ export class DaemonClient {
 		if (!res.ok) return this.parseError(res, "配置失败");
 	}
 
+	/** GET /tasks?limit= — 最近任务列表（运行中 + SQLite 历史） */
+	async listTasks(limit = 20): Promise<TaskSummary[]> {
+		const res = await fetch(`${this.baseUrl}/tasks?limit=${limit}`, {
+			headers: this.headers(),
+		});
+		if (!res.ok) return this.parseError(res, "获取任务列表失败");
+		return (await res.json()) as TaskSummary[];
+	}
+
 	/** POST /tasks → { id } */
 	async submitTask(
 		input: string,
@@ -220,11 +239,8 @@ export class DaemonClient {
 					fetch(`${this.baseUrl}/tasks/${encodeURIComponent(taskId)}`, {
 						headers: this.headers(),
 					})
-						.then(
-							(r) =>
-								(r.ok ? r.json() : null) as Promise<{ status?: string } | null>,
-						)
-						.then((task) => {
+						.then((r) => (r.ok ? r.json() : null))
+						.then((task: any) => {
 							if (
 								task &&
 								["completed", "failed", "cancelled"].includes(task.status || "")
@@ -410,6 +426,7 @@ export class DaemonClient {
 					toolCallCount: number;
 					stopReason: string;
 					duration: number;
+					contextUsage?: number;
 				};
 				const result: TaskResult = {
 					finalAnswer: c.finalAnswer || "",
@@ -417,6 +434,7 @@ export class DaemonClient {
 					toolCallCount: c.toolCallCount ?? 0,
 					stopReason: c.stopReason || "unknown",
 					duration: c.duration ?? 0,
+					contextUsage: c.contextUsage,
 				};
 				callbacks.onComplete?.(result);
 				resolve(result);

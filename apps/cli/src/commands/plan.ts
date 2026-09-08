@@ -43,12 +43,43 @@ export interface PlanCallbacks {
 	onToken?: (fullText: string) => void;
 	onError?: (error: string) => void;
 	onFinalAnswer?: (answer: string) => void;
+	/** 任务已创建（返回 taskId，供 respondInput 使用） */
+	onTaskCreated?: (taskId: string) => void;
+	/** 模型调用 ask_user 工具，等待用户选择分支 */
+	onAskUser?: (payload: { question: string; options?: string[] }) => void;
+	/** 用户已通过 respondInput 提交回答 */
+	onInputResumed?: (payload: { answer: string }) => void;
 }
 
 // ===== Prompt wrapper =====
 
 export function wrapPlanPrompt(task: string): string {
 	return `请按以下要求执行此任务：\n\n${task}\n\n要求：\n1. 先制定详细的实施计划，按阶段编号（P0、P1、P2...）或 Step N 格式列出每个步骤，每步包含简短标题和说明\n2. 然后逐个步骤执行，每完成一步在输出中标记该步骤完成\n3. 执行过程中遇到问题及时修复并继续\n4. 所有步骤完成后输出总结`;
+}
+
+// ===== Auto promote =====
+
+/**
+ * 长任务自动升级启发式：输入像多步骤任务时启用工作流。
+ * 交互（App 连接/内嵌）与管道模式共用，保持"全自动"体验——无需手动 flag。
+ */
+export function shouldAutoPromoteToPlan(input: string): boolean {
+	const trimmed = input.trim();
+	if (trimmed.length < 80) return false;
+	const planIntent =
+		/(?:请按步骤|分阶段|逐步|按以下步骤|按如下步骤|分步骤|逐步执行|step\s*by\s*step|分多个阶段)/i;
+	if (planIntent.test(trimmed)) return true;
+	const hasPhaseMark =
+		/(?:^|\n)\s*(?:P\d+(?:-\d+)?|Phase\s+\d+|阶段\s*[一二三四五六七八九十\d]+|Step\s+\d+|步骤\s*\d+)\s*[:：.\-、)]/im.test(
+			trimmed,
+		);
+	if (hasPhaseMark && trimmed.length > 120) return true;
+	if (trimmed.length > 240) {
+		const codeRatio =
+			(trimmed.match(/[{}[\]();:=/\\]/g) || []).length / trimmed.length;
+		if (codeRatio < 0.08) return true;
+	}
+	return false;
 }
 
 // ===== State reducer =====
@@ -71,7 +102,7 @@ export function createPlanStateReducer(onChange: (state: PlanState) => void) {
 			case "plan_created": {
 				const steps = (event.data?.steps || []).map((step: any, i: number) => ({
 					id: step.id || `step-${i}`,
-					label: step.label || `Step ${i + 1}`,
+					label: step.label || `步骤 ${i + 1}`,
 					description: step.description,
 					status: "pending" as const,
 				}));
@@ -91,9 +122,18 @@ export function createPlanStateReducer(onChange: (state: PlanState) => void) {
 				break;
 			}
 			case "step_completed": {
-				state.steps = state.steps.map((s) =>
-					s.id === event.stepId ? { ...s, status: "completed" as const } : s,
-				);
+				// 标记完成 + 自动激活下一个 pending 步骤（等待 daemon step_started 前的 UX 平滑过渡）
+				let activated = false;
+				state.steps = state.steps.map((s) => {
+					if (s.id === event.stepId) {
+						return { ...s, status: "completed" as const };
+					}
+					if (!activated && s.status === "pending") {
+						activated = true;
+						return { ...s, status: "running" as const };
+					}
+					return s;
+				});
 				state.completedSteps = state.steps.filter(
 					(s) => s.status === "completed",
 				).length;
@@ -121,7 +161,7 @@ export function createPlanStateReducer(onChange: (state: PlanState) => void) {
 				const newSteps = (event.data?.steps || []).map(
 					(step: any, i: number) => ({
 						id: step.id || `step-${i}`,
-						label: step.label || `Step ${i + 1}`,
+						label: step.label || `步骤 ${i + 1}`,
 						description: step.description,
 						status: "pending" as const,
 					}),
@@ -169,6 +209,9 @@ export async function submitPlanTask(
 		onComplete: (result) => {
 			callbacks.onFinalAnswer?.(result.finalAnswer);
 		},
+		onTaskCreated: (taskId) => callbacks.onTaskCreated?.(taskId),
+		onAskUser: (payload) => callbacks.onAskUser?.(payload),
+		onInputResumed: (payload) => callbacks.onInputResumed?.(payload),
 	};
 
 	if (daemonClient) {

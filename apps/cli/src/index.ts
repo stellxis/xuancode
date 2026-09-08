@@ -70,37 +70,16 @@ import { render } from "ink";
 import React from "react";
 import App from "./ink/App";
 
-/** 将消息历史转为文本摘要，避免原始 Message[] 干扰 taorLoop 的停止条件 */
-function buildConversationSummarySimple(messages: Message[]): string {
-	if (messages.length === 0) return "";
-	const parts: string[] = [];
-	for (const msg of messages) {
-		if (msg.role === "user" && !msg.content.startsWith("工具结果:")) {
-			parts.push(`用户: ${msg.content.slice(0, 500)}`);
-		} else if (msg.role === "assistant") {
-			parts.push(`玄码: ${msg.content.slice(0, 1000)}`);
-		}
-	}
-	return parts.join("\n").slice(0, 4000);
-}
-
 import { API_VERSION } from "@xuancode/daemon-protocol";
-import { SessionCollector, SessionPersistence } from "@xuancode/database";
-import {
-	renderMarkdownLineToChalk,
-	renderMarkdownToChalk,
-} from "./components/markdown";
+import { SessionPersistence } from "@xuancode/database";
+import { shouldAutoPromoteToPlan, wrapPlanPrompt } from "./commands/plan";
+import { renderMarkdownToChalk } from "./components/markdown";
 import { DaemonClient } from "./daemonClient";
-
-// ===== 会话持久化 =====
-
-interface SessionRecord {
-	timestamp: number;
-	userInput: string;
-	finalAnswer: string;
-	turnCount: number;
-	toolCallCount: number;
-}
+import {
+	type SessionRecord,
+	buildConversationSummarySimple,
+	createSessionStore,
+} from "./session";
 
 const SESSION_FILE = path.join(
 	PROJECT_ROOT,
@@ -108,47 +87,9 @@ const SESSION_FILE = path.join(
 	"xuancode-sessions.jsonl",
 );
 
-function ensureSessionDir(): void {
-	const dir = path.dirname(SESSION_FILE);
-	if (!fs.existsSync(dir)) {
-		fs.mkdirSync(dir, { recursive: true });
-	}
-}
-
-export function saveSession(record: SessionRecord): void {
-	try {
-		ensureSessionDir();
-		fs.appendFileSync(SESSION_FILE, `${JSON.stringify(record)}\n`, "utf-8");
-	} catch {
-		/* skip */
-	}
-}
-
-function clearSessions(): void {
-	try {
-		if (fs.existsSync(SESSION_FILE)) {
-			fs.unlinkSync(SESSION_FILE);
-		}
-	} catch {
-		/* skip */
-	}
-}
-
-function loadLastSession(): string | null {
-	try {
-		if (!fs.existsSync(SESSION_FILE)) return null;
-		const content = fs.readFileSync(SESSION_FILE, "utf-8");
-		const lines = content.trim().split("\n").filter(Boolean);
-		if (lines.length === 0) return null;
-		const recent = lines.slice(-3).map((l) => JSON.parse(l) as SessionRecord);
-		const parts = recent.map(
-			(s) => `用户: ${s.userInput}\n玄码: ${s.finalAnswer.slice(0, 500)}`,
-		);
-		return parts.join("\n\n");
-	} catch {
-		return null;
-	}
-}
+const sessionStore = createSessionStore(SESSION_FILE);
+const { saveSession, clearSessions, loadLastSession } = sessionStore;
+export type { SessionRecord };
 
 // ===== CLI 参数 =====
 
@@ -314,11 +255,19 @@ async function runNonInteractive(
 			.filter(Boolean)
 			.join("\n\n");
 
+		// /plan 输入或长任务信号 → 启用工作流（与交互模式 shouldAutoPromoteToPlan 一致）
+		const isPlanCmd = input.startsWith("/plan ");
+		const enableWorkflow = isPlanCmd || shouldAutoPromoteToPlan(input);
+		const taskInput = isPlanCmd
+			? wrapPlanPrompt(input.slice(6).trim())
+			: contextualInput;
+
 		try {
 			const { runTaorLoop } = await import("@xuancode/orchestrator");
-			const result = await runTaorLoop(contextualInput, {
+			const result = await runTaorLoop(taskInput, {
 				model,
 				workDir,
+				enableWorkflow,
 				config: {
 					mode: cmdOpts.mode as any,
 					maxTurns,
@@ -374,9 +323,16 @@ async function runNonInteractiveConnect(
 			? `[历史对话]\n${previousSessionContext}\n\n[当前问题]\n${input}`
 			: input;
 
+		// /plan 输入或长任务信号 → 启用工作流（与交互模式 shouldAutoPromoteToPlan 一致）
+		const isPlanCmd = input.startsWith("/plan ");
+		const enableWorkflow = isPlanCmd || shouldAutoPromoteToPlan(input);
+		const taskInput = isPlanCmd
+			? wrapPlanPrompt(input.slice(6).trim())
+			: contextualInput;
+
 		try {
 			const result = await daemonClient.runTask(
-				contextualInput,
+				taskInput,
 				{
 					mode: cmdOpts.mode as any,
 					maxTurns,
@@ -384,6 +340,7 @@ async function runNonInteractiveConnect(
 					compactLevel,
 					compactThreshold: 0.7,
 					sessionId,
+					...(enableWorkflow ? { enableWorkflow: true } : {}),
 				},
 				{
 					onToken: () => {},

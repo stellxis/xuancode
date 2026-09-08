@@ -99,6 +99,8 @@ export const TaskResultSchema = z.object({
 	toolCallCount: z.number(),
 	stopReason: z.string(),
 	duration: z.number(),
+	/** 任务结束时上下文用量百分比（daemon 较新版本才发送，旧版缺省） */
+	contextUsage: z.number().optional(),
 });
 export type TaskResult = z.infer<typeof TaskResultSchema>;
 

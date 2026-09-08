@@ -636,6 +636,15 @@ export async function runTaorLoop(
 					content: recovery.recoveryMessage,
 				});
 			}
+			// 指数退避：立即重试容易撞上同一波故障（429/网络抖动），把 3 次窗口拉开
+			// 连续第 1 次失败 → 立即；第 2 次 → 2s；第 3 次已终止
+			const backoffMs = Math.min(
+				2000 * (stateManager.getState().consecutiveErrors - 1),
+				8000,
+			);
+			if (backoffMs > 0) {
+				await new Promise((resolve) => setTimeout(resolve, backoffMs));
+			}
 			continue;
 		}
 

@@ -20,7 +20,7 @@ export default React.memo(function Banner() {
     ██       █████████████████████        ██
     ██                                    ██
     ██        玄码 · XUANCODE Desk        ██
-    ██       AI Agent Harness v0.1        ██
+    ██       AI Agent Harness v1.0        ██
     ██                                    ██
     ████████████████████████████████████████`}
 			</Text>

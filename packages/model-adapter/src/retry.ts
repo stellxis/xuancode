@@ -106,9 +106,9 @@ export class RetryAdapter implements ModelAdapter {
 		systemPrompt?: string,
 		tools?: ApiToolDefinition[],
 	): AsyncGenerator<ModelStreamEvent, void, unknown> {
-		let lastError: Error | undefined;
-
-		for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
+		let attempt = 0;
+		while (true) {
+			let emitted = false;
 			try {
 				// 富结构透传：文本增量与结构化工具调用事件原样转发
 				for await (const token of this.inner.chatStream(
@@ -116,26 +116,25 @@ export class RetryAdapter implements ModelAdapter {
 					systemPrompt,
 					tools,
 				)) {
+					emitted = true;
 					yield token;
 				}
 				return; // 流式成功完成
 			} catch (err) {
-				lastError = err instanceof Error ? err : new Error(String(err));
-
-				if (attempt < this.config.maxRetries && isRetryable(err)) {
-					const delay = backoffDelay(
-						attempt,
-						this.config.baseDelay,
-						this.config.maxDelay,
-					);
-					yield `\n[重试 ${attempt + 1}/${this.config.maxRetries}，${delay}ms 后重试...]\n`;
-					await new Promise((resolve) => setTimeout(resolve, delay));
-				} else {
+				const lastError = err instanceof Error ? err : new Error(String(err));
+				// 仅在尚未产出任何 token（连接/请求级失败：429/5xx/超时）时退避重试；
+				// 流中途重启会造成输出重复与重试标记污染模型响应，直接抛给上层恢复
+				if (emitted || attempt >= this.config.maxRetries || !isRetryable(err)) {
 					throw lastError;
 				}
+				const delay = backoffDelay(
+					attempt,
+					this.config.baseDelay,
+					this.config.maxDelay,
+				);
+				await new Promise((resolve) => setTimeout(resolve, delay));
+				attempt++;
 			}
 		}
-
-		throw lastError || new Error("流式重试失败");
 	}
 }

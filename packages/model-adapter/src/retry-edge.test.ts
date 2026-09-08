@@ -135,7 +135,7 @@ describe("RetryAdapter edge cases", () => {
 		const retry = new RetryAdapter(adapter, { maxRetries: 2, baseDelay: 10 });
 		const tokens: string[] = [];
 		for await (const token of retry.chatStream([])) {
-			tokens.push(token);
+			tokens.push(token as string);
 		}
 		expect(tokens.some((t) => t.includes("stream success"))).toBe(true);
 		expect(attempts).toBe(2);
@@ -163,7 +163,7 @@ describe("RetryAdapter edge cases", () => {
 		expect(attempts).toBe(1);
 	});
 
-	it("should include retry info in stream output", async () => {
+	it("should retry stream silently before first token", async () => {
 		let attempts = 0;
 		const adapter = {
 			provider: "test",
@@ -179,12 +179,36 @@ describe("RetryAdapter edge cases", () => {
 		const retry = new RetryAdapter(adapter, { maxRetries: 2, baseDelay: 10 });
 		const tokens: string[] = [];
 		for await (const token of retry.chatStream([])) {
-			tokens.push(token);
+			tokens.push(token as string);
 		}
-		// Should include retry notification tokens
-		expect(tokens.length).toBeGreaterThanOrEqual(2);
-		expect(tokens.some((t) => t.includes("重试"))).toBe(true);
-		expect(tokens.some((t) => t.includes("final content"))).toBe(true);
+		// 重试静默进行：不注入 [重试...] 标记污染模型响应
+		expect(tokens).toEqual(["final content"]);
+		expect(attempts).toBe(2);
+	});
+
+	it("should not restart mid-stream after tokens were emitted", async () => {
+		let attempts = 0;
+		const adapter = {
+			provider: "test",
+			modelName: "test-model",
+			chat: async () => "ok",
+			chatStream: async function* () {
+				attempts++;
+				yield "partial ";
+				throw new Error("503 mid-stream");
+			},
+		};
+
+		const retry = new RetryAdapter(adapter, { maxRetries: 3, baseDelay: 10 });
+		const tokens: string[] = [];
+		await expect(async () => {
+			for await (const token of retry.chatStream([])) {
+				tokens.push(token as string);
+			}
+		}).rejects.toThrow("503 mid-stream");
+		// 已产出内容不重复、不重启流
+		expect(tokens).toEqual(["partial "]);
+		expect(attempts).toBe(1);
 	});
 
 	it("should throw stream error after exhausting retries", async () => {

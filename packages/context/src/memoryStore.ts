@@ -105,6 +105,9 @@ export class MemoryStore {
 			item.lastAccessedAt = now;
 			item.accessCount += 1;
 		}
+		// 访问统计落盘：否则重启后检索记录丢失，活跃度被系统性低估
+		// （每次任务触发一次，频率低；fire-and-forget 不阻塞调用方）
+		this.save().catch(() => {});
 		return result.map((s) => s.item);
 	}
 

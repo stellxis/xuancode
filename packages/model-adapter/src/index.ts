@@ -3,6 +3,7 @@ import type {
 	ModelStreamEvent,
 	ToolDefinition,
 } from "@xuancode/types";
+import { RetryAdapter } from "./retry";
 import { parseSSEStream } from "./streamParser";
 
 // ===== OpenAI 兼容工具定义格式 =====
@@ -383,9 +384,11 @@ export function createModelAdapter(
 ): ModelAdapter {
 	switch (provider) {
 		case "deepseek":
-			return new DeepSeekAdapter(config);
+			// 真实供应商默认包一层重试（3 次指数退避，429/5xx/网络错误），
+			// 与 daemon 侧 modelRegistry 的包装行为对齐；mock 无网络故障不包装
+			return new RetryAdapter(new DeepSeekAdapter(config));
 		case "qwen":
-			return new QwenAdapter(config);
+			return new RetryAdapter(new QwenAdapter(config));
 		case "mock":
 			return new MockAdapter();
 		default:

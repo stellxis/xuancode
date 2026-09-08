@@ -2,7 +2,8 @@
  * PlanApp — 聚焦的 Ink 应用，渲染多步骤工作流执行进度，完成后自动退出
  */
 
-import { Box, Static, Text } from "ink";
+import { Box, Static, Text, useInput } from "ink";
+import TextInput from "ink-text-input";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -61,6 +62,68 @@ function StepRow({ step }: { step: PlanState["steps"][number] }) {
 	);
 }
 
+// ===== Ask user prompt =====
+
+/**
+ * ask_user 等待中：有选项 → 数字键直选；无选项 → 自由文本输入。
+ * 回答通过 POST /tasks/:id/input 提交，任务恢复执行。
+ */
+function AskUserPrompt({
+	question,
+	options,
+	onSubmit,
+}: {
+	question: string;
+	options?: string[];
+	onSubmit: (answer: string) => void;
+}) {
+	const hasOptions = !!options && options.length > 0;
+	const [textValue, setTextValue] = useState("");
+
+	useInput(
+		(input) => {
+			const idx = Number.parseInt(input, 10) - 1;
+			if (Number.isNaN(idx)) return;
+			if (idx >= 0 && idx < options!.length) {
+				onSubmit(options![idx]);
+			}
+		},
+		{ isActive: hasOptions },
+	);
+
+	if (hasOptions) {
+		return (
+			<Box flexDirection="column" marginTop={1}>
+				<Text bold color={colors.gold}>
+					{"  ? "}
+					{question}
+				</Text>
+				{options!.map((opt, i) => (
+					<Text key={i}>
+						{"      "}
+						{i + 1}. {opt}
+					</Text>
+				))}
+			</Box>
+		);
+	}
+
+	return (
+		<Box marginTop={1}>
+			<Text bold color={colors.gold}>
+				{"  ? "}
+				{question}{" "}
+			</Text>
+			<TextInput
+				value={textValue}
+				onChange={setTextValue}
+				placeholder="输入回答后回车..."
+				onSubmit={onSubmit}
+			/>
+		</Box>
+	);
+}
+
 // ===== PlanApp =====
 
 interface PlanAppProps {
@@ -86,8 +149,13 @@ export default function PlanApp({
 	const [streamingText, setStreamingText] = useState("");
 	const [finalAnswer, setFinalAnswer] = useState("");
 	const [error, setError] = useState("");
+	const [pendingQuestion, setPendingQuestion] = useState<{
+		question: string;
+		options?: string[];
+	} | null>(null);
 	const startedRef = useRef(false);
 	const finalAnswerRef = useRef<string>("");
+	const taskIdRef = useRef<string>("");
 
 	useEffect(() => {
 		if (startedRef.current) return;
@@ -107,6 +175,18 @@ export default function PlanApp({
 				finalAnswerRef.current = answer;
 				setFinalAnswer(answer);
 			},
+			onTaskCreated: (taskId) => {
+				taskIdRef.current = taskId;
+			},
+			onAskUser: (payload) => {
+				setPendingQuestion({
+					question: payload.question,
+					options: payload.options,
+				});
+			},
+			onInputResumed: () => {
+				setPendingQuestion(null);
+			},
 		});
 	}, [task, daemonClient, workDir, opts]);
 
@@ -116,6 +196,15 @@ export default function PlanApp({
 			scheduleExit(0);
 		}
 	}, [planState.status]);
+
+	function submitAnswer(answer: string): void {
+		setPendingQuestion(null);
+		if (daemonClient && taskIdRef.current) {
+			daemonClient.respondInput(taskIdRef.current, answer).catch((e) => {
+				setError(`提交回答失败: ${e?.message || e}`);
+			});
+		}
+	}
 
 	function scheduleExit(code: number): void {
 		setTimeout(() => process.exit(code), 500);
@@ -161,6 +250,15 @@ export default function PlanApp({
 			{planState.steps.map((step) => (
 				<StepRow key={step.id} step={step} />
 			))}
+
+			{/* ask_user 等待中 */}
+			{pendingQuestion && (
+				<AskUserPrompt
+					question={pendingQuestion.question}
+					options={pendingQuestion.options}
+					onSubmit={submitAnswer}
+				/>
+			)}
 
 			{/* Error */}
 			{error && (
