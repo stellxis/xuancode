@@ -1,9 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { MemoryManager } from "@xuancode/context";
-import { resolveHome, resolveMemoryScopeDir } from "@xuancode/utils";
 import type { ModelAdapter } from "@xuancode/model-adapter";
 import type { Message } from "@xuancode/types";
+import { resolveHome, resolveMemoryScopeDir } from "@xuancode/utils";
 
 const DISTILL_SYSTEM_PROMPT = `You are a session knowledge extractor. Analyze the following conversation between a user and an AI coding assistant. Extract reusable knowledge.
 
@@ -282,7 +282,7 @@ export class SessionDistiller {
 			await fs.mkdir(path.dirname(queuePath), { recursive: true });
 			await fs.writeFile(
 				queuePath,
-				sessions.map((s) => JSON.stringify(s)).join("\n") + "\n",
+				`${sessions.map((s) => JSON.stringify(s)).join("\n")}\n`,
 				"utf-8",
 			);
 		} catch (e) {
