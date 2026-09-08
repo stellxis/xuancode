@@ -39,3 +39,18 @@ export function debounce<T extends (...args: any[]) => any>(
 		timer = setTimeout(() => fn(...args), delay);
 	};
 }
+
+export {
+	resolveHome,
+	resolveProjectData,
+	resolveServerData,
+	resolveManagedPolicy,
+	resolveMemoryScopeDir,
+} from "./paths";
+export { repoSlug, sanitizeRepoSlug, simpleHash } from "./repoSlug";
+export {
+	migrateHomeDir,
+	migrateProjectData,
+	migrateServerData,
+} from "./migrate";
+export { cleanupHomeRoot, cleanupProjectRoot } from "./gc";

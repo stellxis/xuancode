@@ -10,6 +10,7 @@
 	},
 	"dependencies": {
 		"@xuancode/types": "workspace:*",
+		"@xuancode/utils": "workspace:*",
 		"execa": "^9.0.0",
 		"ignore": "^7.0.0"
 	},

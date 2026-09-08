@@ -6,6 +6,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { resolveProjectData } from "@xuancode/utils";
 
 // ===== 配置 schema 类型 =====
 
@@ -35,7 +36,9 @@ export class PluginConfigLoader {
 	private configDir: string;
 
 	constructor(projectDir?: string) {
-		this.configDir = path.resolve(projectDir || process.cwd(), ".xuancode");
+		this.configDir = resolveProjectData(
+			path.resolve(projectDir || process.cwd()),
+		);
 	}
 
 	/** 加载配置 */

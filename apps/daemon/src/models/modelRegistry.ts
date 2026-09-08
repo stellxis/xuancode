@@ -15,6 +15,7 @@ import {
 } from "@xuancode/model-router";
 import type { ProviderAdapter } from "@xuancode/model-router";
 import type { Message } from "@xuancode/types";
+import { resolveProjectData } from "@xuancode/utils";
 
 export interface ModelEntry {
 	provider: string;
@@ -268,7 +269,10 @@ let _models: ModelEntry[] = [...DEFAULT_MODELS];
 let _overridesPath = "";
 
 export function initModelRegistry(workDir: string): void {
-	_overridesPath = path.join(workDir, ".xuancode", "models-override.json");
+	_overridesPath = path.join(
+		resolveProjectData(workDir),
+		"models-override.json",
+	);
 	reloadOverrides();
 }
 

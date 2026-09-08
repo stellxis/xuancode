@@ -7,8 +7,19 @@
 	"bin": {
 		"xuancode": "./dist/index.js"
 	},
-	"files": ["dist", "README.md", "LICENSE"],
-	"keywords": ["xuancode", "ai", "agent", "cli", "coding", "assistant"],
+	"files": [
+		"dist",
+		"README.md",
+		"LICENSE"
+	],
+	"keywords": [
+		"xuancode",
+		"ai",
+		"agent",
+		"cli",
+		"coding",
+		"assistant"
+	],
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/stellxis/xuancode.git"
@@ -28,6 +39,7 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
+		"@xuancode/utils": "workspace:*",
 		"better-sqlite3": "^11.0.0",
 		"chalk": "^5.4.0",
 		"commander": "^13.0.0",

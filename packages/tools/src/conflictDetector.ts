@@ -7,6 +7,7 @@ import { execSync } from "node:child_process";
  */
 import fs from "node:fs";
 import path from "node:path";
+import { resolveProjectData } from "@xuancode/utils";
 
 /** 冲突记录 */
 export interface FileConflict {
@@ -151,7 +152,7 @@ function tryGitMergeFile(
 	const ext = path.extname(filePath);
 	const baseName = path.basename(filePath, ext);
 
-	const tempDir = path.join(workDir, ".xuancode", "merge-tmp");
+	const tempDir = path.join(resolveProjectData(workDir), "merge-tmp");
 	const baseFile = path.join(tempDir, `${baseName}-base${ext}`);
 	const currentFile = path.join(tempDir, `${baseName}-current${ext}`);
 	const otherFile = path.join(tempDir, `${baseName}-other${ext}`);

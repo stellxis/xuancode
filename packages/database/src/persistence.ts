@@ -45,10 +45,17 @@ export class SessionPersistence {
 		DatabasePool.close();
 	}
 
-	/** 保存完整会话的日志条目 */
-	saveSession(sessionId: string, entries: LogEntry[]): void {
+	/** 保存完整会话的日志条目（可选记录 transcript 文件路径） */
+	saveSession(
+		sessionId: string,
+		entries: LogEntry[],
+		transcriptPath?: string,
+	): void {
 		if (!this.store) throw new Error("SessionPersistence not initialized");
 		this.store.importEntries(sessionId, entries);
+		if (transcriptPath) {
+			this.store.setTranscriptPath(sessionId, transcriptPath);
+		}
 	}
 
 	/** 重建会话（先删后插，用于重新导入） */

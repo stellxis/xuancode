@@ -291,7 +291,7 @@ export class SubAgentScheduler {
 		this.workDir = workDir;
 		this.hookRegistry = new HookRegistry();
 		// Register default hooks
-		for (const hook of createDefaultHooks()) {
+		for (const hook of createDefaultHooks(workDir)) {
 			this.hookRegistry.register(hook);
 		}
 	}

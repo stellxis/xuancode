@@ -57,9 +57,11 @@ function findProjectRoot(): string {
 }
 
 const PROJECT_ROOT = findProjectRoot();
+// 项目级数据根（env XUANCODE_PROJECT_DATA 可覆盖；开发时可指到仓库外）
+const PROJECT_DATA_DIR = resolveProjectData(PROJECT_ROOT);
 
 // ===== SQLite 持久化 =====
-const SQLITE_DB_PATH = path.join(PROJECT_ROOT, ".xuancode", "sessions.db");
+const SQLITE_DB_PATH = path.join(PROJECT_DATA_DIR, "sessions.db");
 let sessionPersistence: SessionPersistence | null = null;
 
 import readline from "node:readline";
@@ -72,6 +74,14 @@ import App from "./ink/App";
 
 import { API_VERSION } from "@xuancode/daemon-protocol";
 import { SessionPersistence } from "@xuancode/database";
+import {
+	cleanupHomeRoot,
+	cleanupProjectRoot,
+	migrateHomeDir,
+	migrateProjectData,
+	resolveHome,
+	resolveProjectData,
+} from "@xuancode/utils";
 import { shouldAutoPromoteToPlan, wrapPlanPrompt } from "./commands/plan";
 import { renderMarkdownToChalk } from "./components/markdown";
 import { DaemonClient } from "./daemonClient";
@@ -81,11 +91,7 @@ import {
 	createSessionStore,
 } from "./session";
 
-const SESSION_FILE = path.join(
-	PROJECT_ROOT,
-	".xuancode",
-	"xuancode-sessions.jsonl",
-);
+const SESSION_FILE = path.join(PROJECT_DATA_DIR, "xuancode-sessions.jsonl");
 
 const sessionStore = createSessionStore(SESSION_FILE);
 const { saveSession, clearSessions, loadLastSession } = sessionStore;
@@ -212,6 +218,13 @@ const argv = process.argv
 if (argv.length > 0) {
 	program.parse(argv, { from: "user" });
 }
+
+// 旧布局迁移（幂等；用户级 + 项目级，失败不阻塞启动）
+await migrateHomeDir().catch(() => {});
+await migrateProjectData(PROJECT_ROOT).catch(() => {});
+// GC（.last-cleanup 超 24h 才实际执行）
+cleanupHomeRoot(resolveHome()).catch(() => {});
+cleanupProjectRoot(PROJECT_DATA_DIR).catch(() => {});
 
 const opts = program.opts();
 

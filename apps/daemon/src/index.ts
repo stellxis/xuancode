@@ -14,7 +14,6 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import http from "node:http";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
@@ -51,7 +50,8 @@ import type { ModePreset } from "@xuancode/orchestrator";
 import { SessionManager } from "@xuancode/session";
 import { SubAgentScheduler } from "@xuancode/subagent";
 import type { AgentConfig, AttachmentBlock } from "@xuancode/types";
-// 公开仓：@xuancode/types 已删除 PermissionLevel（商业配额类型），本地定义以兼容 scheduler 签名
+
+/** 公开仓本地定义（商业配额契约已从 @xuancode/types 剥离） */
 type PermissionLevel = "free" | "professional" | "enterprise";
 import { StopReason } from "@xuancode/types";
 import type { Message } from "@xuancode/types";
@@ -105,6 +105,16 @@ import {
 	getGlobalLockManager,
 	setSearchProvider,
 } from "@xuancode/tools";
+import {
+	cleanupHomeRoot,
+	cleanupProjectRoot,
+	migrateHomeDir,
+	migrateProjectData,
+	migrateServerData,
+	repoSlug,
+	resolveHome,
+	resolveProjectData,
+} from "@xuancode/utils";
 import { ADMIN_HTML } from "./adminHtml";
 import { CodeIntelligenceService } from "./codeIntelligence/codeIntelligenceService";
 import { ComputerUseService } from "./computerUse/computerUseService";
@@ -139,16 +149,6 @@ function normalizeWinPath(p: string): string {
 function resolveCheckpointDir(url: URL, fallback: string): string {
 	const p = url.searchParams.get("path");
 	return p ? normalizeWinPath(p) : fallback;
-}
-
-/** 简单字符串哈希（用于索引路径隔离） */
-function simpleHash(str: string): string {
-	let hash = 0;
-	for (let i = 0; i < str.length; i++) {
-		hash = (hash << 5) - hash + str.charCodeAt(i);
-		hash |= 0;
-	}
-	return Math.abs(hash).toString(36);
 }
 
 // ===== COMBAT Worker 任务句柄 =====
@@ -1616,7 +1616,16 @@ export class DaemonScheduler {
 						10000,
 					);
 				} else {
-					this.sessionPersistence?.saveSession(sessionId, entries);
+					// 记录 transcript 路径（会话目录化后 db 索引据此定位 jsonl）
+					try {
+						this.sessionPersistence?.saveSession(
+							sessionId,
+							entries,
+							sessionStore.getLogPath(),
+						);
+					} catch {
+						this.sessionPersistence?.saveSession(sessionId, entries);
+					}
 					try {
 						this.sessionIndexer?.indexSession(sessionId);
 					} catch (e) {
@@ -2394,8 +2403,19 @@ export async function startDaemonServer(
 	const provider = opts.provider ?? "mock";
 	const modelName = opts.modelName ?? "deepseek-v4-flash";
 	const workDir = normalizeWinPath(opts.workDir ?? process.cwd());
+	// 项目级数据根（env XUANCODE_PROJECT_DATA 可覆盖，见 @xuancode/utils）
+	const projectDataDir = resolveProjectData(workDir);
 	const sessionsDir = opts.sessionsDir;
 	const enableTelemetry = opts.enableTelemetry ?? false;
+
+	// 用户级旧布局迁移（幂等，失败不阻塞启动；项目级在 .xuancode 目录创建后跑）
+	await migrateHomeDir().catch((e) => {
+		console.error("[玄码] 用户数据迁移失败（非致命）:", e);
+	});
+	// 服务级数据迁移（auth/payments/plans → 服务数据根，copy 不 delete）
+	await migrateServerData().catch((e) => {
+		console.error("[玄码] 服务数据迁移失败（非致命）:", e);
+	});
 
 	// 在启动时设置 API Key 环境变量（适配器通过 process.env 读取）
 	if (opts.apiKeys) {
@@ -2418,7 +2438,9 @@ export async function startDaemonServer(
 
 	// Build model-router from registry (or inject a test model directly)
 	const model: ModelAdapter = opts.model ?? createModel(provider, modelName);
-	const sessionManager = new SessionManager(sessionsDir);
+	const sessionManager = new SessionManager(
+		sessionsDir ?? path.join(projectDataDir, "sessions"),
+	);
 
 	// Telemetry tracer (declare before scheduler so we can wire it)
 	const telemetryTracer = enableTelemetry
@@ -2444,7 +2466,7 @@ export async function startDaemonServer(
 	}
 
 	// 确保 .xuancode 目录存在
-	const xuancodeDir = path.join(workDir, ".xuancode");
+	const xuancodeDir = projectDataDir;
 	try {
 		if (!fs.existsSync(xuancodeDir)) {
 			fs.mkdirSync(xuancodeDir, { recursive: true });
@@ -2452,6 +2474,14 @@ export async function startDaemonServer(
 	} catch (e) {
 		console.error("[玄码] 创建 .xuancode 目录失败:", e);
 	}
+
+	// 旧布局迁移（幂等；用户级在启动早期已跑，这里补项目级）
+	await migrateProjectData(workDir).catch((e) => {
+		console.error("[玄码] 项目数据迁移失败（非致命）:", e);
+	});
+	// GC（.last-cleanup 超 24h 才实际执行，平时开销为一次 stat）
+	cleanupHomeRoot(resolveHome()).catch(() => {});
+	cleanupProjectRoot(projectDataDir).catch(() => {});
 
 	// 追加式系统事件流（跨会话审计/回放）
 	const eventStream = new EventStream(xuancodeDir);
@@ -2554,11 +2584,13 @@ export async function startDaemonServer(
 	// 注意：workDir 可能在 daemon 启动后才通过 /daemon/workdir 设置，
 	// 因此用 let 保存，切换项目时重建服务并重新索引
 	const buildCodeIntelligenceService = (dir: string) => {
-		const projectHash = simpleHash(dir);
+		// 索引缓存归用户级：~/.xuancode/cache/code-index/<slug>.json（按项目 slug 隔离）
 		const codeIntelligenceIndexPath = path.join(
-			os.homedir(),
+			resolveHome(),
 			".xuancode",
-			`code-index-${projectHash}.json`,
+			"cache",
+			"code-index",
+			`${repoSlug(dir)}.json`,
 		);
 		const service = new CodeIntelligenceService(dir, codeIntelligenceIndexPath);
 		// 后台异步构建索引（失败记录日志，status 轮询会再次触发重试）
@@ -2576,7 +2608,7 @@ export async function startDaemonServer(
 			: null;
 
 	// 离线语音引擎
-	const whisperDataDir = path.join(os.homedir(), ".xuancode", "whisper");
+	const whisperDataDir = path.join(resolveHome(), ".xuancode", "whisper");
 	const whisperEngine = new WhisperLocalEngine({ dataDir: whisperDataDir });
 	let whisperDownloading = false;
 
@@ -2593,7 +2625,7 @@ export async function startDaemonServer(
 	const rateLimitRPM = opts.rateLimitRPM ?? 60;
 	const rateLimiter = rateLimitRPM > 0 ? createRateLimiter(rateLimitRPM) : null;
 
-	// 认证/计费组件（公开仓 seam：auth 已剥离，置为 null，所有 auth?. 调用自动短路）
+	// 认证/计费组件（公开仓 seam：auth 已剥离，运行时降级为无认证模式）
 	const auth = null as any;
 
 	// PluginManager 初始化
@@ -4383,7 +4415,7 @@ export async function startDaemonServer(
 			}
 
 			// ===== MCP 多服务管理 (VS Code 风格的 mcpServers) =====
-			const mcpSvcsDir = path.join(workDir, ".xuancode", "mcp-services");
+			const mcpSvcsDir = path.join(projectDataDir, "mcp-services");
 			const mcpSvcsFile = path.join(mcpSvcsDir, "services.jsonl");
 
 			async function loadMcpServices() {
@@ -4641,7 +4673,7 @@ export async function startDaemonServer(
 
 			// ===== Skills 列表（动态 JSONL 存储） =====
 			// --- 辅助函数 ---
-			const skillsDir = path.join(workDir, ".xuancode", "skills");
+			const skillsDir = path.join(projectDataDir, "skills");
 			const skillsFile = path.join(skillsDir, "skills.jsonl");
 
 			async function loadSkills() {

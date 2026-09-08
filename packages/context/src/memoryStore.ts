@@ -8,42 +8,65 @@ import {
 	scoreItems,
 } from "./memoryRanker";
 
-const JSON_FILE = "MEMORY.json";
+/**
+ * L5 auto_memory 存储。
+ *
+ * 事实源：每条记忆一个 md 文件（items/<id>.md，frontmatter 元数据 + 正文），
+ * 便于文件级 GC / 分域 / 同步。
+ * 兼容链：items/ 目录 → 旧 MEMORY.json 迁移（改名 .bak）→ 旧 MEMORY.md 迁移。
+ * 过渡期 save() 继续同步生成 MEMORY.md，供旧版本降级读取。
+ */
 const MD_FILE = "MEMORY.md";
+const ITEMS_DIR = "items";
 
 export class MemoryStore {
 	private items: MemoryItem[] = [];
-	private jsonPath: string;
+	private itemsDir: string;
+	private legacyJsonPath: string;
 	private mdPath: string;
 
 	constructor(memoryDir: string) {
-		this.jsonPath = path.join(memoryDir, JSON_FILE);
+		this.itemsDir = path.join(memoryDir, ITEMS_DIR);
+		this.legacyJsonPath = path.join(memoryDir, "MEMORY.json");
 		this.mdPath = path.join(memoryDir, MD_FILE);
 	}
 
 	// ========== I/O ==========
 
-	/** Load from MEMORY.json (or migrate from MEMORY.md) */
+	/** Load: items/ 目录 → MEMORY.json 迁移 → MEMORY.md 迁移 */
 	async load(): Promise<void> {
-		try {
-			const raw = await fs.readFile(this.jsonPath, "utf-8");
-			this.items = JSON.parse(raw);
-		} catch {
-			const migrated = await this.tryMigrateFromMarkdown();
-			if (!migrated) {
-				this.items = [];
-			}
+		const loaded = await this.tryLoadFromItemsDir();
+		if (loaded) return;
+		const migratedJson = await this.tryMigrateFromJson();
+		if (migratedJson) return;
+		const migratedMd = await this.tryMigrateFromMarkdown();
+		if (!migratedMd) {
+			this.items = [];
 		}
 	}
 
-	/** Save to MEMORY.json + sync MEMORY.md */
+	/** Save: 全量落 items/*.md + 清理已删除文件 + 同步 MEMORY.md（过渡期兼容） */
 	async save(): Promise<void> {
-		await fs.mkdir(path.dirname(this.jsonPath), { recursive: true });
-		await fs.writeFile(
-			this.jsonPath,
-			JSON.stringify(this.items, null, 2),
-			"utf-8",
-		);
+		await fs.mkdir(this.itemsDir, { recursive: true });
+		const keep = new Set<string>();
+		for (const item of this.items) {
+			keep.add(`${item.id}.md`);
+			await fs.writeFile(
+				path.join(this.itemsDir, `${item.id}.md`),
+				this.serializeItem(item),
+				"utf-8",
+			);
+		}
+		// 删除已不在内存中的条目文件（deleteItem 后的落盘）
+		try {
+			for (const f of await fs.readdir(this.itemsDir)) {
+				if (f.endsWith(".md") && !keep.has(f)) {
+					await fs.rm(path.join(this.itemsDir, f));
+				}
+			}
+		} catch {
+			// 目录不可读时忽略，不影响主流程
+		}
 		await this.syncMarkdown();
 	}
 
@@ -247,6 +270,105 @@ export class MemoryStore {
 		});
 	}
 
+	// ----- items/*.md 序列化 -----
+
+	private serializeItem(item: MemoryItem): string {
+		const meta: Record<string, string> = {
+			id: item.id,
+			tags: JSON.stringify(item.tags),
+			source: JSON.stringify(item.source ?? null),
+			weight: String(item.weight),
+			pinned: String(item.pinned),
+			createdAt: String(item.createdAt),
+			lastAccessedAt: String(item.lastAccessedAt),
+			accessCount: String(item.accessCount),
+		};
+		const lines = ["---"];
+		for (const [k, v] of Object.entries(meta)) lines.push(`${k}: ${v}`);
+		lines.push("---", "", item.text, "");
+		return lines.join("\n");
+	}
+
+	private deserializeItem(raw: string): MemoryItem | null {
+		const m = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+		if (!m) return null;
+		const meta: Record<string, string> = {};
+		for (const line of m[1].split("\n")) {
+			const idx = line.indexOf(":");
+			if (idx > 0) meta[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+		}
+		const text = m[2].trim();
+		if (!meta.id || !text) return null;
+		const num = (key: string, fallback: number): number => {
+			const n = Number(meta[key]);
+			return Number.isFinite(n) ? n : fallback;
+		};
+		let tags: string[] = [];
+		try {
+			const parsed = JSON.parse(meta.tags || "[]");
+			if (Array.isArray(parsed)) tags = parsed.map(String);
+		} catch {
+			tags = [];
+		}
+		let source: string | undefined;
+		try {
+			const parsed = JSON.parse(meta.source || "null");
+			if (typeof parsed === "string") source = parsed;
+		} catch {
+			source = undefined;
+		}
+		return {
+			id: meta.id,
+			text,
+			tags,
+			source,
+			weight: num("weight", 0.6),
+			pinned: meta.pinned === "true",
+			createdAt: num("createdAt", Date.now()),
+			lastAccessedAt: num("lastAccessedAt", Date.now()),
+			accessCount: num("accessCount", 1),
+		};
+	}
+
+	private async tryLoadFromItemsDir(): Promise<boolean> {
+		try {
+			const files = (await fs.readdir(this.itemsDir)).filter((f) =>
+				f.endsWith(".md"),
+			);
+			if (files.length === 0) return false;
+			const items: MemoryItem[] = [];
+			for (const f of files) {
+				try {
+					const raw = await fs.readFile(path.join(this.itemsDir, f), "utf-8");
+					const item = this.deserializeItem(raw);
+					if (item) items.push(item);
+				} catch {
+					// 单文件损坏跳过，不阻塞其余记忆
+				}
+			}
+			if (items.length === 0) return false;
+			this.items = items;
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	/** 旧 MEMORY.json → items/*.md，旧文件改名 .bak */
+	private async tryMigrateFromJson(): Promise<boolean> {
+		try {
+			const raw = await fs.readFile(this.legacyJsonPath, "utf-8");
+			const legacy = JSON.parse(raw) as MemoryItem[];
+			if (!Array.isArray(legacy) || legacy.length === 0) return false;
+			this.items = legacy;
+			await this.save();
+			await fs.rename(this.legacyJsonPath, `${this.legacyJsonPath}.bak`);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
 	/** Try migrating from old flat MEMORY.md format */
 	private async tryMigrateFromMarkdown(): Promise<boolean> {
 		try {
@@ -279,7 +401,7 @@ export class MemoryStore {
 		}
 	}
 
-	/** Sync JSON → Markdown for human readability */
+	/** Sync → Markdown for human readability（过渡期：旧版本降级读取靠它） */
 	private async syncMarkdown(): Promise<void> {
 		const lines: string[] = ["# 玄码自动记忆\n"];
 		for (const item of this.items) {

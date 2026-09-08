@@ -215,7 +215,8 @@ describe("SessionStore", () => {
 		await smallStore.logMessage({ role: "user", content: "a" }, 1);
 		await smallStore.logMessage({ role: "user", content: "b" }, 1);
 
-		const files = fs.readdirSync(TEST_DIR);
+		// v2 目录化：轮转文件与会话 transcript 同目录（<sessionDir>/<sessionId>/）
+		const files = fs.readdirSync(path.dirname(smallStore.getLogPath()));
 		const rotated = files.filter((f) => f.endsWith(".rotated"));
 		expect(rotated.length).toBeGreaterThanOrEqual(1);
 	});

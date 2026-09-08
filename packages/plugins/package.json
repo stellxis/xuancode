@@ -9,7 +9,8 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
-		"@xuancode/types": "workspace:*"
+		"@xuancode/types": "workspace:*",
+		"@xuancode/utils": "workspace:*"
 	},
 	"devDependencies": {
 		"vitest": "^3.0.0"

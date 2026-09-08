@@ -9,7 +9,7 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
-		"@xuancode/types": "workspace:*"
-	},
-	"license": "Apache-2.0 OR Commercial"
+		"@xuancode/types": "workspace:*",
+		"@xuancode/utils": "workspace:*"
+	}
 }

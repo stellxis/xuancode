@@ -78,6 +78,11 @@ const EMBEDDED_MIGRATIONS: Migration[] = [
 			"CREATE INDEX IF NOT EXISTS idx_daemontasks_session ON daemon_tasks(session_id);",
 		].join("\n"),
 	},
+	{
+		version: 7,
+		description: "add transcript_path to sessions",
+		sql: "ALTER TABLE sessions ADD COLUMN transcript_path TEXT;",
+	},
 ];
 
 /**

@@ -9,9 +9,9 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
-		"@xuancode/types": "workspace:*",
+		"@xuancode/model-adapter": "workspace:*",
 		"@xuancode/orchestrator": "workspace:*",
-		"@xuancode/model-adapter": "workspace:*"
-	},
-	"license": "Apache-2.0 OR Commercial"
+		"@xuancode/types": "workspace:*",
+		"@xuancode/utils": "workspace:*"
+	}
 }

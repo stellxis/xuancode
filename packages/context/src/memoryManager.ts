@@ -1,6 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { MemoryItem, MemoryRankOptions, Message } from "@xuancode/types";
+import {
+	resolveHome,
+	resolveManagedPolicy,
+	resolveMemoryScopeDir,
+	resolveProjectData,
+} from "@xuancode/utils";
 import { MemoryStore } from "./memoryStore";
 
 /**
@@ -28,21 +34,25 @@ export class MemoryManager {
 	private cacheDir: string;
 	private store: MemoryStore;
 
-	constructor(projectDir: string) {
-		this.cacheDir = path.join(projectDir, ".xuancode");
-		this.initLayers(projectDir);
-		const homeDir = process.env.HOME || process.env.USERPROFILE || "~";
-		const memoryDir = path.join(homeDir, ".xuancode", "memory");
-		this.store = new MemoryStore(memoryDir);
+	constructor(projectDir: string, options?: { sessionMemoryDir?: string }) {
+		this.cacheDir = resolveProjectData(projectDir);
+		this.initLayers(projectDir, options);
+		this.store = new MemoryStore(resolveMemoryScopeDir(projectDir));
 	}
 
-	private initLayers(projectDir: string) {
-		const homeDir = process.env.HOME || process.env.USERPROFILE || "~";
+	private initLayers(
+		projectDir: string,
+		options?: { sessionMemoryDir?: string },
+	) {
+		const homeDir = resolveHome();
+		// L6/L7 会话层：默认保持 <项目>/.xuancode 旧路径（向后兼容）；
+		// daemon/CLI 传入 sessions/<sessionId> 后随会话目录化
+		const sessionMemoryDir = options?.sessionMemoryDir ?? this.cacheDir;
 
 		this.layers = [
 			{
 				name: "managed_policy",
-				path: path.join("/etc", "xuancode", "xuancode.md"),
+				path: resolveManagedPolicy(),
 				priority: 100,
 				content: "",
 				decayRate: 0, // 免衰减
@@ -70,14 +80,14 @@ export class MemoryManager {
 			},
 			{
 				name: "auto_memory",
-				path: path.join(homeDir, ".xuancode", "memory", "MEMORY.md"),
+				path: path.join(resolveMemoryScopeDir(projectDir), "MEMORY.md"),
 				priority: 40,
 				content: "",
 				decayRate: 0.05, // 可衰减
 			},
 			{
 				name: "session",
-				path: path.join(this.cacheDir, "session-memory.md"),
+				path: path.join(sessionMemoryDir, "session-memory.md"),
 				priority: 30,
 				content: "",
 				decayRate: 0.1,
@@ -86,7 +96,7 @@ export class MemoryManager {
 
 		this.layers.push({
 			name: "subagent",
-			path: path.join(this.cacheDir, "subagent-memory.md"),
+			path: path.join(sessionMemoryDir, "subagent-memory.md"),
 			priority: 20,
 			content: "",
 			decayRate: 0.1,

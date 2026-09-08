@@ -29,6 +29,7 @@ export class SessionStoreSQLite {
 		getToolCalls: ReturnType<Database.Database["prepare"]>;
 		getErrors: ReturnType<Database.Database["prepare"]>;
 		deleteSession: ReturnType<Database.Database["prepare"]>;
+		setTranscriptPath: ReturnType<Database.Database["prepare"]>;
 	};
 
 	constructor(db: Database.Database) {
@@ -81,6 +82,9 @@ export class SessionStoreSQLite {
 			),
 			getErrors: db.prepare(
 				"SELECT * FROM errors WHERE session_id = ? ORDER BY turn, id",
+			),
+			setTranscriptPath: db.prepare(
+				"UPDATE sessions SET transcript_path = @transcript_path WHERE id = @id",
 			),
 			deleteSession: db.prepare("DELETE FROM sessions WHERE id = ?"),
 		};
@@ -145,6 +149,14 @@ export class SessionStoreSQLite {
 			}
 		});
 		batch();
+	}
+
+	/** 记录 transcript 文件路径（会话目录化后用于 db 索引定位 jsonl） */
+	setTranscriptPath(sessionId: string, transcriptPath: string): void {
+		this.prepared.setTranscriptPath.run({
+			id: sessionId,
+			transcript_path: transcriptPath,
+		});
 	}
 
 	/** 从 LogEntry 数组重建完整会话（先删后插，事务） */

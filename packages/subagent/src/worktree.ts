@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { resolveProjectData } from "@xuancode/utils";
 
 /**
  * Worktree Isolation — creates isolated workspaces for sub-agents
@@ -29,14 +30,13 @@ export class WorktreeManager {
 	async create(options: WorktreeOptions): Promise<string> {
 		const branchName = options.branchName || `xuancode-wt-${Date.now()}`;
 		const worktreeDir = path.join(
-			options.baseDir,
-			".xuancode",
+			resolveProjectData(options.baseDir),
 			"worktrees",
 			branchName,
 		);
 		const worktreePath = worktreeDir;
 
-		// Ensure the .xuancode/worktrees directory exists
+		// Ensure the worktrees directory exists
 		fs.mkdirSync(path.dirname(worktreeDir), { recursive: true });
 
 		try {

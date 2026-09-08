@@ -9,6 +9,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveHome } from "@xuancode/utils";
 
 // ===== 类型定义 =====
 
@@ -43,7 +44,7 @@ export class PluginDiscovery {
 		const scanned = new Set<string>();
 
 		const dirs = [
-			path.join(osHomeDir(), ".xuancode", "plugins"),
+			path.join(resolveHome(), ".xuancode", "plugins"),
 			...(this.options.projectDir
 				? [path.join(this.options.projectDir, ".xuancode", "plugins")]
 				: []),
@@ -274,7 +275,3 @@ export interface XuanCodePluginConfig {
 }
 
 // ===== 工具函数 =====
-
-function osHomeDir(): string {
-	return process.env.HOME || process.env.USERPROFILE || "/home/user";
-}

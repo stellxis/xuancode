@@ -3,6 +3,26 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
 import type { AgentConfig, Message, StopReason } from "@xuancode/types";
+import { resolveProjectData } from "@xuancode/utils";
+
+/**
+ * 会话目录布局（v2）：
+ *   <sessionsDir>/<sessionId>/transcript.jsonl   事实源
+ *   <sessionsDir>/<sessionId>/memory-session.md  L6 会话记忆
+ * 兼容旧布局（v1）：<sessionsDir>/<sessionId>.jsonl（迁移由 @xuancode/utils migrateProjectData 完成，
+ * 读取侧双兼容：新路径优先，回退旧平铺文件）。
+ */
+const TRANSCRIPT_FILE = "transcript.jsonl";
+
+/** 解析会话 transcript 路径：目录化优先，回退旧平铺 jsonl */
+export function resolveTranscriptPath(
+	sessionsDir: string,
+	sessionId: string,
+): string {
+	const v2 = path.join(sessionsDir, sessionId, TRANSCRIPT_FILE);
+	if (existsSync(v2)) return v2;
+	return path.join(sessionsDir, `${sessionId}.jsonl`);
+}
 
 // ===== 日志条目类型 =====
 
@@ -86,7 +106,7 @@ export class SessionStore {
 	constructor(
 		sessionDirOrOptions?: string | { sessionDir?: string; maxLogSize?: number },
 	) {
-		const defaultDir = path.join(process.cwd(), ".xuancode", "sessions");
+		const defaultDir = path.join(resolveProjectData(process.cwd()), "sessions");
 		if (typeof sessionDirOrOptions === "object") {
 			this.sessionDir = sessionDirOrOptions.sessionDir || defaultDir;
 			this.maxLogSize = sessionDirOrOptions.maxLogSize ?? 10 * 1024 * 1024;
@@ -96,11 +116,12 @@ export class SessionStore {
 		}
 		this.sessionId = new Date().toISOString().replace(/[:.]/g, "-");
 		this.createdAt = new Date().toISOString();
-		this.logPath = path.join(this.sessionDir, `${this.sessionId}.jsonl`);
+		// v2 目录化：每个会话一个子目录，transcript.jsonl 为事实源
+		this.logPath = path.join(this.sessionDir, this.sessionId, TRANSCRIPT_FILE);
 	}
 
 	async init(): Promise<void> {
-		await fs.mkdir(this.sessionDir, { recursive: true });
+		await fs.mkdir(path.dirname(this.logPath), { recursive: true });
 	}
 
 	getSessionId(): string {
@@ -113,6 +134,11 @@ export class SessionStore {
 
 	getSessionDir(): string {
 		return this.sessionDir;
+	}
+
+	/** 会话专属目录（L6 会话记忆 memory-session.md / L7 subagent-memory.md 存放处） */
+	getMemoryDir(): string {
+		return path.dirname(this.logPath);
 	}
 
 	/** 添加任意日志条目（自动轮转） */
@@ -289,7 +315,7 @@ export class SessionManager {
 			| string
 			| { sessionsDir?: string; maxLogSize?: number },
 	) {
-		const defaultDir = path.join(process.cwd(), ".xuancode", "sessions");
+		const defaultDir = path.join(resolveProjectData(process.cwd()), "sessions");
 		if (typeof sessionsDirOrOptions === "object") {
 			this.sessionsDir = sessionsDirOrOptions.sessionsDir || defaultDir;
 			this.maxLogSize = sessionsDirOrOptions.maxLogSize ?? 10 * 1024 * 1024;
@@ -299,20 +325,42 @@ export class SessionManager {
 		}
 	}
 
-	/** 清理超过指定天数的旧会话文件 */
+	/** 清理超过指定天数的旧会话（v2 目录与 v1 平铺文件双兼容） */
 	async pruneSessions(maxAgeDays: number): Promise<number> {
 		const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
 		let deleted = 0;
 		try {
-			const files = await fs.readdir(this.sessionsDir);
-			for (const file of files) {
-				if (!file.endsWith(".jsonl") && !file.endsWith(".rotated")) continue;
-				const filePath = path.join(this.sessionsDir, file);
+			const entries = await fs.readdir(this.sessionsDir, {
+				withFileTypes: true,
+			});
+			for (const entry of entries) {
 				try {
-					const stat = await fs.stat(filePath);
-					if (stat.mtimeMs < cutoff) {
-						await fs.unlink(filePath);
-						deleted++;
+					if (entry.isDirectory()) {
+						// v2：会话子目录，按 transcript 的 mtime 判断
+						const transcriptPath = path.join(
+							this.sessionsDir,
+							entry.name,
+							TRANSCRIPT_FILE,
+						);
+						const stat = await fs.stat(transcriptPath);
+						if (stat.mtimeMs < cutoff) {
+							await fs.rm(path.join(this.sessionsDir, entry.name), {
+								recursive: true,
+								force: true,
+							});
+							deleted++;
+						}
+					} else if (
+						entry.name.endsWith(".jsonl") ||
+						entry.name.endsWith(".rotated")
+					) {
+						// v1：平铺文件
+						const filePath = path.join(this.sessionsDir, entry.name);
+						const stat = await fs.stat(filePath);
+						if (stat.mtimeMs < cutoff) {
+							await fs.unlink(filePath);
+							deleted++;
+						}
 					}
 				} catch {
 					/* skip unreadable */
@@ -339,28 +387,50 @@ export class SessionManager {
 		return store;
 	}
 
-	/** 列出所有会话 */
+	/** 列出所有会话（v2 目录 + v1 平铺双兼容） */
 	async listSessions(): Promise<
 		Array<{ sessionId: string; createdAt: string; summary: string }>
 	> {
 		await this.pruneSessions(30);
 		await fs.mkdir(this.sessionsDir, { recursive: true }).catch(() => {});
-		const files = await fs.readdir(this.sessionsDir).catch(() => []);
+		const entries = await fs
+			.readdir(this.sessionsDir, { withFileTypes: true })
+			.catch(() => []);
+
+		// 收集会话标识：目录名（v2）+ 平铺 jsonl 文件名（v1），按名称倒序取最近 50
+		const sessionIds = Array.from(
+			new Set(
+				entries
+					.map((e) => {
+						if (e.isDirectory()) return e.name;
+						if (e.name.endsWith(".jsonl"))
+							return e.name.replace(/\.jsonl(\.\d+)?(\.rotated)?$/, "");
+						return null;
+					})
+					.filter((n): n is string => n !== null),
+			),
+		)
+			.sort()
+			.reverse()
+			.slice(0, 50);
+
 		const sessions: Array<{
 			sessionId: string;
 			createdAt: string;
 			summary: string;
 		}> = [];
 
-		for (const file of files.sort().reverse().slice(0, 50)) {
-			if (!file.endsWith(".jsonl")) continue;
+		for (const sessionId of sessionIds) {
 			const store = new SessionStore(this.sessionsDir);
-			(store as any).sessionId = file.replace(".jsonl", "");
-			(store as any).logPath = path.join(this.sessionsDir, file);
+			(store as any).sessionId = sessionId;
+			(store as any).logPath = resolveTranscriptPath(
+				this.sessionsDir,
+				sessionId,
+			);
 			try {
 				const summary = await store.getSummary();
 				sessions.push({
-					sessionId: summary.meta?.sessionId || file.replace(".jsonl", ""),
+					sessionId: summary.meta?.sessionId || sessionId,
 					createdAt: summary.meta?.createdAt || "unknown",
 					summary: summary.end
 						? `${summary.end.turnCount} turns, ${summary.end.stopReason}`
@@ -373,11 +443,11 @@ export class SessionManager {
 		return sessions;
 	}
 
-	/** 加载已有会话 */
+	/** 加载已有会话（v2 目录优先，回退 v1 平铺） */
 	async loadSession(sessionId: string): Promise<SessionStore> {
 		const store = new SessionStore(this.sessionsDir);
 		(store as any).sessionId = sessionId;
-		(store as any).logPath = path.join(this.sessionsDir, `${sessionId}.jsonl`);
+		(store as any).logPath = resolveTranscriptPath(this.sessionsDir, sessionId);
 		return store;
 	}
 }

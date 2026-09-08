@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { MemoryManager } from "@xuancode/context";
+import { resolveHome, resolveMemoryScopeDir } from "@xuancode/utils";
 import type { ModelAdapter } from "@xuancode/model-adapter";
 import type { Message } from "@xuancode/types";
 
@@ -195,7 +196,7 @@ export class SessionDistiller {
 
 	/**
 	 * Auto cross-session analysis pipeline:
-	 * 1. Load accumulated session learnings from ~/.xuancode/memory/session-learnings.json
+	 * 1. Load accumulated session learnings from memory scope dir (cross-analyze-queue.jsonl)
 	 * 2. Append current session's learnings
 	 * 3. If 3+ sessions accumulated, run crossAnalyze()
 	 * 4. Persist detected patterns and prune old sessions
@@ -206,26 +207,46 @@ export class SessionDistiller {
 	): Promise<void> {
 		if (currentLearnings.length === 0) return;
 
-		const homeDir = process.env.HOME || process.env.USERPROFILE || "~";
-		const learningsPath = path.join(
-			homeDir,
-			".xuancode",
-			"memory",
-			"session-learnings.json",
+		// 队列随 L5 记忆分域：~/.xuancode/memory/[projects/<slug>|global]/cross-analyze-queue.jsonl
+		const queuePath = path.join(
+			resolveMemoryScopeDir(this.workDir),
+			"cross-analyze-queue.jsonl",
 		);
 
 		try {
-			// Load accumulated learnings
+			// Load accumulated learnings（旧全局 session-learnings.json 迁移：载入后改名 .bak）
 			let sessions: Array<{
 				sessionId: string;
 				learnings: string[];
 				timestamp: number;
 			}> = [];
 			try {
-				const raw = await fs.readFile(learningsPath, "utf-8");
-				sessions = JSON.parse(raw);
+				const raw = await fs.readFile(queuePath, "utf-8");
+				for (const line of raw.split("\n")) {
+					const trimmed = line.trim();
+					if (!trimmed) continue;
+					sessions.push(JSON.parse(trimmed));
+				}
 			} catch {
 				/* start fresh */
+			}
+			if (sessions.length === 0) {
+				try {
+					const legacyPath = path.join(
+						resolveHome(),
+						".xuancode",
+						"memory",
+						"session-learnings.json",
+					);
+					const raw = await fs.readFile(legacyPath, "utf-8");
+					const legacy = JSON.parse(raw);
+					if (Array.isArray(legacy) && legacy.length > 0) {
+						sessions = legacy;
+						await fs.rename(legacyPath, `${legacyPath}.bak`);
+					}
+				} catch {
+					/* no legacy file */
+				}
 			}
 
 			// Append current session
@@ -257,11 +278,11 @@ export class SessionDistiller {
 				}
 			}
 
-			// Save updated learnings
-			await fs.mkdir(path.dirname(learningsPath), { recursive: true });
+			// Save updated learnings（jsonl 追加写：一行一个会话）
+			await fs.mkdir(path.dirname(queuePath), { recursive: true });
 			await fs.writeFile(
-				learningsPath,
-				JSON.stringify(sessions, null, 2),
+				queuePath,
+				sessions.map((s) => JSON.stringify(s)).join("\n") + "\n",
 				"utf-8",
 			);
 		} catch (e) {

@@ -1,5 +1,8 @@
 import { execSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import { HookEvent } from "@xuancode/types";
+import { resolveHome, resolveProjectData } from "@xuancode/utils";
 
 /**
  * Hook System — 27+ 事件节点覆盖全生命周期
@@ -175,29 +178,40 @@ export class HookRegistry {
 }
 
 /**
- * Create default hook set
+ * Create default hook set.
+ * 传 workDir 生成项目级绝对路径（<workDir>/.xuancode/logs/）；
+ * 无参调用退化为用户级 ~/.xuancode/logs/ —— 避免 hook 执行时依赖 cwd 的相对路径写错位置。
  */
-export function createDefaultHooks(): HookDefinition[] {
+export function createDefaultHooks(workDir?: string): HookDefinition[] {
+	const logDir = workDir
+		? path.join(resolveProjectData(workDir), "logs")
+		: path.join(resolveHome(), ".xuancode", "logs");
+	const hooksLog = path.join(logDir, "hooks.log").replace(/\\/g, "/");
+	const sessionLog = path.join(logDir, "session.log").replace(/\\/g, "/");
+	// `echo >> file` 不会自建目录，注册时确保 logs 目录存在
+	try {
+		fs.mkdirSync(logDir, { recursive: true });
+	} catch {
+		/* 目录创建失败时 hook 执行会静默失败，不影响主流程 */
+	}
 	return [
 		{
 			event: HookEvent.PRE_TOOL_USE,
 			name: "pre-tool-log",
 			execution: "command",
-			command: "echo 'PreToolUse: {{toolType}}' >> .xuancode/hooks.log",
+			command: `echo 'PreToolUse: {{toolType}}' >> '${hooksLog}'`,
 		},
 		{
 			event: HookEvent.POST_TOOL_USE,
 			name: "post-tool-log",
 			execution: "command",
-			command:
-				"echo 'PostToolUse: {{toolType}} ({{success}})' >> .xuancode/hooks.log",
+			command: `echo 'PostToolUse: {{toolType}} ({{success}})' >> '${hooksLog}'`,
 		},
 		{
 			event: HookEvent.SESSION_START,
 			name: "session-start",
 			execution: "command",
-			command:
-				"echo 'Session started at {{timestamp}}' >> .xuancode/session.log",
+			command: `echo 'Session started at {{timestamp}}' >> '${sessionLog}'`,
 		},
 	];
 }
