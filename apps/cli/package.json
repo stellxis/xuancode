@@ -1,6 +1,6 @@
 {
 	"name": "@xuancode/cli",
-	"version": "1.5.103",
+	"version": "1.5.104",
 	"type": "module",
 	"description": "玄码AI 命令行智能编码助手 — XuanCode AI Agent CLI",
 	"license": "Apache-2.0 OR Commercial",

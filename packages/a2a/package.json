@@ -1,6 +1,6 @@
 {
 	"name": "@xuancode/a2a",
-	"version": "1.5.103",
+	"version": "1.5.104",
 	"private": true,
 	"type": "module",
 	"main": "./src/index.ts",
