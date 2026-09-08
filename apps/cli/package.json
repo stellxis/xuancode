@@ -7,19 +7,8 @@
 	"bin": {
 		"xuancode": "./dist/index.js"
 	},
-	"files": [
-		"dist",
-		"README.md",
-		"LICENSE"
-	],
-	"keywords": [
-		"xuancode",
-		"ai",
-		"agent",
-		"cli",
-		"coding",
-		"assistant"
-	],
+	"files": ["dist", "README.md", "LICENSE"],
+	"keywords": ["xuancode", "ai", "agent", "cli", "coding", "assistant"],
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/stellxis/xuancode.git"
