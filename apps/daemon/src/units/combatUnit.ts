@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import os from "node:os";
+import path from "node:path";
 import { SessionCollector } from "@xuancode/database";
 import {
 	type ProjectCheckpointSnapshot,
@@ -121,7 +123,15 @@ class CombatUnit extends UnitBase {
 
 				// 3. Optional telemetry tracer
 				if (process.env.ENABLE_TELEMETRY === "true") {
-					tracer = new Tracer({ maxSpans: 500, maxTraces: 50 });
+					tracer = new Tracer({
+						maxSpans: 500,
+						maxTraces: 50,
+						sinkDir: path.join(
+							process.env.XUANCODE_HOME || process.env.HOME || os.homedir(),
+							".xuancode",
+							"telemetry",
+						),
+					});
 					// Bridge tracer span events to IPC (for real-time telemetry in UI)
 					tracer.onSpanEvent("span_start", (span) => {
 						this.sendEvent("telemetry_span", { type: "span_start", ...span });

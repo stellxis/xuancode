@@ -117,6 +117,13 @@ describe("cleanupProjectRoot", () => {
 		await expect(fs.access(validDir)).resolves.toBeUndefined();
 	});
 
+	it("删除 30 天未动的计划文档", async () => {
+		const root = path.join(tmpWork, ".xuancode");
+		await makeOld(path.join(root, "plans", "2026-08-01-abc123.md"), 40);
+		const deleted = await cleanupProjectRoot(root, { minIntervalMs: 0 });
+		expect(deleted).toBeGreaterThanOrEqual(1);
+	});
+
 	it("删除超期 merge-tmp", async () => {
 		const root = path.join(tmpWork, ".xuancode");
 		await makeOld(path.join(root, "merge-tmp", "file-base.ts"), 10);

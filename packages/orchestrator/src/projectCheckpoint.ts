@@ -47,6 +47,8 @@ export interface ProjectCheckpointSnapshot {
 		completed: number;
 		total: number;
 	} | null;
+	/** 计划文档路径（.xuancode 相对路径，如 plans/2026-09-09-a1b2c3.md） */
+	planFile?: string | null;
 	/** 关键节点时间线（里程碑，最新在后） */
 	milestones: string[];
 }
@@ -65,6 +67,34 @@ function stepIcon(status: string): string {
 		default:
 			return "[ ]";
 	}
+}
+
+/** 计划文档文件名：plans/<YYYY-MM-DD>-<summary 哈希 6 位>.md（同 summary 稳定） */
+function planFileName(date: Date, summary: string): string {
+	const y = date.getFullYear();
+	const m = String(date.getMonth() + 1).padStart(2, "0");
+	const d = String(date.getDate()).padStart(2, "0");
+	let hash = 0;
+	for (let i = 0; i < summary.length; i++) {
+		hash = (hash << 5) - hash + summary.charCodeAt(i);
+		hash |= 0;
+	}
+	const tag = Math.abs(hash).toString(36).slice(0, 6);
+	// 固定正斜杠：planFile 会存进 checkpoint.json，需跨平台可移植
+	return `plans/${y}-${m}-${d}-${tag}.md`;
+}
+
+/** 计划快照 → Markdown 文档（计划标题 + 步骤状态表 + 里程碑） */
+function renderPlanMarkdown(
+	plan: NonNullable<ProjectCheckpointSnapshot["plan"]>,
+): string {
+	const lines: string[] = [`# 计划：${plan.summary || "(无标题)"}\n`];
+	lines.push(`> 完成 ${plan.completed}/${plan.total} 步\n`);
+	for (const s of plan.steps) {
+		const sub = s.subAgentType ? ` — ${s.subAgentType}` : "";
+		lines.push(`- ${stepIcon(s.status)} **${s.id}** ${s.label}${sub}`);
+	}
+	return `${lines.join("\n")}\n`;
 }
 
 /**
@@ -207,6 +237,7 @@ export class ProjectCheckpoint {
 	};
 	private turnsUsed = 0;
 	private plan: ProjectCheckpointSnapshot["plan"] = null;
+	private planFile: string | null = null;
 	private milestones: string[] = [];
 
 	recordRead(p: string): void {
@@ -262,6 +293,9 @@ export class ProjectCheckpoint {
 		if (completed === total) {
 			this.recordMilestone("工作流计划完成");
 		}
+		// 计划文档文件名：日期 + summary 哈希，summary 变化（新计划）→ 新文件
+		const desired = planFileName(new Date(), plan.summary || "");
+		if (this.planFile !== desired) this.planFile = desired;
 	}
 
 	/** 记录关键节点（最新在后，最多保留 20 条） */
@@ -327,6 +361,7 @@ export class ProjectCheckpoint {
 		if (snap.verify) this.verify = { ...this.verify, ...snap.verify };
 		if (snap.turnsUsed) this.turnsUsed = snap.turnsUsed;
 		if (snap.plan) this.plan = snap.plan;
+		if (snap.planFile !== undefined) this.planFile = snap.planFile;
 		if (snap.milestones) this.milestones = [...snap.milestones];
 	}
 
@@ -338,6 +373,7 @@ export class ProjectCheckpoint {
 			verify: this.verify,
 			turnsUsed: this.turnsUsed,
 			plan: this.plan,
+			planFile: this.planFile,
 			milestones: [...this.milestones],
 		};
 	}
@@ -359,7 +395,7 @@ export class ProjectCheckpoint {
 		return cp;
 	}
 
-	/** 落盘到 workDir/.xuancode/checkpoint.json（非致命，失败静默） */
+	/** 落盘到 workDir/.xuancode/checkpoint.json（非致命，失败静默）；有计划时同步写计划文档到 plans/ */
 	save(workDir: string): void {
 		try {
 			const dir = path.join(workDir, ".xuancode");
@@ -368,6 +404,14 @@ export class ProjectCheckpoint {
 				path.join(dir, "checkpoint.json"),
 				JSON.stringify(this.snapshot(), null, 2),
 			);
+			// 计划文档持久化：<workDir>/.xuancode/plans/<date>-<hash>.md（同计划覆盖，新计划新文件）
+			if (this.plan && this.planFile) {
+				fs.mkdirSync(path.join(dir, "plans"), { recursive: true });
+				atomicWriteFileSync(
+					path.join(dir, this.planFile),
+					renderPlanMarkdown(this.plan),
+				);
+			}
 		} catch {
 			/* checkpoint 持久化失败不影响任务 */
 		}

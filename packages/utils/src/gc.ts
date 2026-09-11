@@ -26,6 +26,8 @@ export interface GcOptions {
 	cacheRetentionDays?: number;
 	/** 孤儿记忆 scope 保留天数，默认 30 */
 	orphanScopeRetentionDays?: number;
+	/** 计划文档保留天数，默认 30 */
+	planRetentionDays?: number;
 	/** 当前活跃项目目录列表（用于判断孤儿记忆 scope） */
 	activeProjectSlugs?: string[];
 	/** 记忆分域根目录（默认 ~/.xuancode/memory） */
@@ -201,6 +203,11 @@ export async function cleanupHomeRoot(
 			}
 		}
 		deleted += await pruneOldFiles(path.join(root, "logs"), logDays);
+		// telemetry traces 按天分文件，30 天前的整文件删除
+		deleted += await pruneOldFiles(
+			path.join(root, "telemetry"),
+			opts.orphanScopeRetentionDays ?? 30,
+		);
 		deleted += await pruneOrphanMemoryScopes(
 			path.join(root, "memory"),
 			new Set(opts.activeProjectSlugs ?? []),
@@ -222,12 +229,17 @@ export async function cleanupProjectRoot(
 	const cacheDays = opts.cacheRetentionDays ?? 7;
 	const logDays = opts.logRetentionDays ?? 14;
 
+	const planDays = opts.planRetentionDays ?? 30;
 	let deleted = 0;
 	try {
 		deleted += await pruneOldFiles(path.join(projectDataDir, "logs"), logDays);
 		deleted += await pruneOldFiles(
 			path.join(projectDataDir, "merge-tmp"),
 			cacheDays,
+		);
+		deleted += await pruneOldFiles(
+			path.join(projectDataDir, "plans"),
+			planDays,
 		);
 		deleted += await pruneOrphanSessionDirs(
 			path.join(projectDataDir, "sessions"),

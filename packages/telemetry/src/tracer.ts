@@ -6,6 +6,8 @@
  */
 
 import { EventEmitter } from "node:events";
+import fs from "node:fs";
+import path from "node:path";
 import type {
 	AgentTrace,
 	FiveElement,
@@ -30,7 +32,9 @@ export class Tracer {
 	private traces = new Map<string, AgentTrace>();
 	private activeTrace: AgentTrace | null = null;
 	private emitter = new EventEmitter();
-	private options: Required<TelemetryOptions>;
+	private options: Omit<Required<TelemetryOptions>, "sinkDir"> & {
+		sinkDir?: string;
+	};
 
 	constructor(options: TelemetryOptions = {}) {
 		this.options = {
@@ -39,6 +43,32 @@ export class Tracer {
 			verbose: false,
 			...options,
 		};
+	}
+
+	/**
+	 * trace 落盘（fire-and-forget）：追加到 <sinkDir>/traces-YYYY-MM-DD.jsonl。
+	 * 同步 append 单条 trace 体量小、频率低（任务结束一次），不构成热路径；
+	 * 失败静默——遥测绝不影响任务执行。
+	 */
+	private persistTrace(tr: AgentTrace): void {
+		const dir = this.options.sinkDir;
+		if (!dir) return;
+		try {
+			fs.mkdirSync(dir, { recursive: true });
+			const d = new Date();
+			const y = d.getFullYear();
+			const m = String(d.getMonth() + 1).padStart(2, "0");
+			const day = String(d.getDate()).padStart(2, "0");
+			const file = path.join(dir, `traces-${y}-${m}-${day}.jsonl`);
+			fs.appendFileSync(
+				file,
+				`${JSON.stringify(tr)}
+`,
+				"utf-8",
+			);
+		} catch {
+			/* 落盘失败不影响运行 */
+		}
 	}
 
 	/** 创建一个新的 Trace */
@@ -74,6 +104,7 @@ export class Tracer {
 		if (updates) Object.assign(this.activeTrace, updates);
 		this.emitter.emit("trace_end", this.activeTrace);
 		const tr = this.activeTrace;
+		this.persistTrace(tr);
 		this.activeTrace = null;
 		return tr;
 	}
@@ -168,6 +199,8 @@ export class Tracer {
 		if (this.traces.has(trace.id)) return;
 		this.evictOldTraces();
 		this.traces.set(trace.id, trace);
+		// Worker 重建的已完成 trace 同样落盘（endTime 非空才是完整 trace）
+		if (trace.endTime !== null) this.persistTrace(trace);
 		this.emitter.emit("trace_imported", trace);
 	}
 

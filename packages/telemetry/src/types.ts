@@ -104,6 +104,8 @@ export interface TelemetryOptions {
 	maxTraces?: number;
 	/** 是否启用详细追踪 */
 	verbose?: boolean;
+	/** trace 落盘目录（jsonl 按天分文件）；不设则纯内存 */
+	sinkDir?: string;
 }
 
 /** OTLP 导出配置（预留） */

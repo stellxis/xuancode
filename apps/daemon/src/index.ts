@@ -133,7 +133,7 @@ import {
 import { WhisperLocalEngine } from "./whisperLocal.js";
 
 // ===== 版本（协议契约单点 @xuancode/daemon-protocol） =====
-const DAEMON_VERSION = "1.5.103";
+const DAEMON_VERSION = "1.5.104";
 
 // ===== Windows 长路径前缀（\\?\） =====
 const WIN_PATH_THRESHOLD = 240;
@@ -2442,9 +2442,13 @@ export async function startDaemonServer(
 		sessionsDir ?? path.join(projectDataDir, "sessions"),
 	);
 
-	// Telemetry tracer (declare before scheduler so we can wire it)
+	// Telemetry tracer（trace 按天落盘 ~/.xuancode/telemetry/，重启不丢历史）
 	const telemetryTracer = enableTelemetry
-		? new Tracer({ maxSpans: 500, maxTraces: 50 })
+		? new Tracer({
+				maxSpans: 500,
+				maxTraces: 50,
+				sinkDir: path.join(resolveHome(), ".xuancode", "telemetry"),
+			})
 		: null;
 	const speedrunAnalyzer = enableTelemetry ? new SpeedrunAnalyzer() : null;
 	if (enableTelemetry) {
@@ -4136,6 +4140,7 @@ export async function startDaemonServer(
 				respond(res, 200, {
 					...scheduler.getStats(),
 					uptime: process.uptime(),
+					workDir: workDir,
 				});
 				return;
 			}
